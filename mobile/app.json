@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "TradeAnalyzer",
+    "slug": "tradeanalyzer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "tradeanalyzer",
+    "splash": {
+      "backgroundColor": "#0B0E11"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tradeanalyzer.app"
+    },
+    "android": {
+      "package": "com.tradeanalyzer.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0E11"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

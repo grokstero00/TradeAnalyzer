@@ -1,0 +1,28 @@
+{
+  "name": "@tradeanalyzer/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TradeAnalyzer backend: candle fetching, technical indicators, signal engine, backtester, and a secure API-key vault.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test src/indicators/indicators.test.ts src/signals/signalEngine.test.ts src/backtest/backtester.test.ts src/security/keyVault.test.ts"
+  },
+  "dependencies": {
+    "@tradeanalyzer/shared": "*",
+    "ccxt": "^4.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}

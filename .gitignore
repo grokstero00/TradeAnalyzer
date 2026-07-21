@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Builds
+dist/
+build/
+web-build/
+*.tsbuildinfo
+
+# Env / secrets  — NEVER commit real API keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Local data
+data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Expo / React Native
+.expo/
+.expo-shared/
+mobile/ios/
+mobile/android/
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.orig.*
+
+# Logs
+logs/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+coverage/

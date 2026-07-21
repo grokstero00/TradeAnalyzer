@@ -1,0 +1,15 @@
+{
+  "name": "@tradeanalyzer/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript types used by both the backend and the mobile app.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
