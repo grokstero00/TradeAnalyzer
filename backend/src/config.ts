@@ -11,6 +11,10 @@ export const config = {
   vaultFile: process.env.VAULT_FILE ?? "./data/vault.json",
   /** When false, the backend serves synthetic candles instead of hitting a real exchange. */
   enableLiveExchange: (process.env.ENABLE_LIVE_EXCHANGE ?? "false").toLowerCase() === "true",
+  /** Where triggered alerts + watchlist are persisted (gitignored). */
+  alertsFile: process.env.ALERTS_FILE ?? "./data/alerts.json",
+  /** Auto-evaluate the alert watchlist every N seconds. 0 disables the timer. */
+  alertIntervalSec: Number(process.env.ALERT_INTERVAL_SEC ?? 0),
 } as const;
 
 export type AppConfig = typeof config;

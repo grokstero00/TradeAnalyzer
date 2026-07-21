@@ -8,7 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --import tsx --test src/indicators/indicators.test.ts src/signals/signalEngine.test.ts src/backtest/backtester.test.ts src/security/keyVault.test.ts"
+    "test": "node --import tsx --test src/indicators/indicators.test.ts src/signals/signalEngine.test.ts src/backtest/backtester.test.ts src/security/keyVault.test.ts src/alerts/alertEngine.test.ts"
   },
   "dependencies": {
     "@tradeanalyzer/shared": "*",

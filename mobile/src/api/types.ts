@@ -78,6 +78,37 @@ export interface BacktestResponse {
   disclaimer: string;
 }
 
+export interface WatchItem {
+  exchange: ExchangeId;
+  symbol: string;
+  timeframe: Timeframe;
+}
+
+export interface Alert {
+  id: string;
+  exchange: ExchangeId;
+  symbol: string;
+  timeframe: Timeframe;
+  previousAction: SignalAction;
+  action: SignalAction;
+  confidence: number;
+  price: number;
+  timestamp: number;
+  seen: boolean;
+}
+
+export interface AlertsResponse {
+  alerts: Alert[];
+  watchlist: WatchItem[];
+  unseen: number;
+}
+
+export interface EvaluateResponse {
+  triggered: Alert[];
+  alerts: Alert[];
+  unseen: number;
+}
+
 export interface ExchangeAccountPublic {
   id: string;
   exchange: ExchangeId;

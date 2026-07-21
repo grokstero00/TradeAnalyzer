@@ -4,7 +4,9 @@ import { ZodError } from "zod";
 import { config } from "./config.ts";
 import { marketRouter } from "./routes/market.ts";
 import { keysRouter } from "./routes/keys.ts";
+import { alertsRouter } from "./routes/alerts.ts";
 import { getVault } from "./security/vaultInstance.ts";
+import { alertStore, liveSignalProvider } from "./alerts/alertInstance.ts";
 
 const app = express();
 app.use(cors({ origin: config.corsOrigin === "*" ? true : config.corsOrigin.split(",") }));
@@ -22,6 +24,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", marketRouter);
 app.use("/api/keys", keysRouter);
+app.use("/api/alerts", alertsRouter);
 
 // 404
 app.use((_req, res) => {
@@ -43,4 +46,14 @@ app.listen(config.port, () => {
   console.log(`  live exchange: ${config.enableLiveExchange ? "ON" : "OFF (sample data)"}`);
   console.log(`  key vault: ${getVault() ? "configured" : "disabled (set VAULT_MASTER_KEY to enable)"}`);
   console.log("  Advisory only — not financial advice.");
+
+  // Optional background alert evaluation.
+  if (config.alertIntervalSec > 0) {
+    console.log(`  alert engine: evaluating every ${config.alertIntervalSec}s`);
+    setInterval(() => {
+      alertStore.evaluate(liveSignalProvider).catch((err) => {
+        console.error("alert evaluation failed:", err instanceof Error ? err.message : err);
+      });
+    }, config.alertIntervalSec * 1000);
+  }
 });

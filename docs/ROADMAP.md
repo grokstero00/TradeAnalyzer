@@ -15,14 +15,17 @@ product you'd trust with real decisions (and, eventually, real orders).
 - [x] Live public data via ccxt (Binance, Bybit) behind a flag
 
 ## Phase 2 — Real data & charts
-- [ ] Candlestick charts in the app (e.g. `react-native-wagmi-charts`) with
-      indicator overlays
+- [x] Candlestick charts in the app (SVG, `react-native-svg`) with an SMA overlay
+- [ ] More overlays (EMA, Bollinger bands) and volume sub-panel
 - [ ] WebSocket live price streaming instead of polling
-- [ ] Persist a user-editable watchlist
+- [ ] Persist a user-editable watchlist (backend watchlist API exists; add UI)
 - [ ] Caching / rate-limit handling for exchange calls
 
 ## Phase 3 — Alerts & accounts
-- [ ] Push notifications (Expo Notifications) when a signal crosses a threshold
+- [x] Action-change alert engine (backend) + in-app Alerts view with unread badge
+- [x] Local notifications (Expo Notifications) on native when a signal flips
+- [ ] Remote push (alerts when the app is closed) via Expo push tokens
+- [ ] Threshold-based alerts (confidence crossings) in addition to action changes
 - [ ] User accounts + auth so keys/watchlists are per-user
 - [ ] Move the vault to a managed KMS; per-user encryption keys
 - [ ] Read account balances/positions (read-only keys)

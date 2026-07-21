@@ -110,6 +110,31 @@ export interface BacktestResult {
   /** Simple annualization is intentionally omitted — this is a raw summary. */
 }
 
+/** One market the alert engine watches. */
+export interface WatchItem {
+  exchange: ExchangeId;
+  symbol: string;
+  timeframe: Timeframe;
+}
+
+/** A triggered alert: the signal action for a watched market changed. */
+export interface Alert {
+  id: string;
+  exchange: ExchangeId;
+  symbol: string;
+  timeframe: Timeframe;
+  /** The action before this change. */
+  previousAction: SignalAction;
+  /** The new action that triggered the alert. */
+  action: SignalAction;
+  confidence: number;
+  price: number;
+  /** epoch ms when the alert was triggered. */
+  timestamp: number;
+  /** Whether the user has seen it (for unread badges). */
+  seen: boolean;
+}
+
 /** Public (non-secret) view of a stored exchange connection. */
 export interface ExchangeAccountPublic {
   id: string;

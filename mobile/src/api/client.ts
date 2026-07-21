@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
+  AlertsResponse,
   BacktestResponse,
   CandlesResponse,
+  EvaluateResponse,
   ExchangeAccountPublic,
   ExchangeId,
   SignalResponse,
@@ -76,6 +78,22 @@ export function fetchBacktest(q: SignalQuery & { limit?: number }): Promise<Back
     limit: String(q.limit ?? 500),
   });
   return request<BacktestResponse>(`/api/backtest?${params.toString()}`);
+}
+
+export function fetchAlerts(): Promise<AlertsResponse> {
+  return request<AlertsResponse>("/api/alerts");
+}
+
+export function evaluateAlerts(): Promise<EvaluateResponse> {
+  return request<EvaluateResponse>("/api/alerts/evaluate", { method: "POST" });
+}
+
+export function markAlertsSeen(): Promise<{ unseen: number }> {
+  return request<{ unseen: number }>("/api/alerts/seen", { method: "POST" });
+}
+
+export function clearAlerts(): Promise<{ alerts: [] }> {
+  return request<{ alerts: [] }>("/api/alerts/clear", { method: "POST" });
 }
 
 export function listKeys(): Promise<ExchangeAccountPublic[]> {
