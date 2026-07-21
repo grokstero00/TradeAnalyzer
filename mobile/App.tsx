@@ -5,6 +5,7 @@ import { NavigationContainer, DarkTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SignalsScreen } from "./src/screens/SignalsScreen";
+import { ChartScreen } from "./src/screens/ChartScreen";
 import { BacktestScreen } from "./src/screens/BacktestScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { colors } from "./src/theme/theme";
@@ -45,6 +46,11 @@ export default function App() {
             name="Signals"
             component={SignalsScreen}
             options={{ tabBarIcon: tabIcon("📈"), title: "Signals" }}
+          />
+          <Tab.Screen
+            name="Chart"
+            component={ChartScreen}
+            options={{ tabBarIcon: tabIcon("📊"), title: "Chart" }}
           />
           <Tab.Screen
             name="Backtest"

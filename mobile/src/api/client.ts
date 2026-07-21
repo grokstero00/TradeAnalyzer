@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
   BacktestResponse,
+  CandlesResponse,
   ExchangeAccountPublic,
   ExchangeId,
   SignalResponse,
@@ -55,6 +56,16 @@ export interface SignalQuery {
 export function fetchSignal(q: SignalQuery): Promise<SignalResponse> {
   const params = new URLSearchParams({ exchange: q.exchange, symbol: q.symbol, timeframe: q.timeframe });
   return request<SignalResponse>(`/api/signal?${params.toString()}`);
+}
+
+export function fetchCandles(q: SignalQuery & { limit?: number }): Promise<CandlesResponse> {
+  const params = new URLSearchParams({
+    exchange: q.exchange,
+    symbol: q.symbol,
+    timeframe: q.timeframe,
+    limit: String(q.limit ?? 120),
+  });
+  return request<CandlesResponse>(`/api/candles?${params.toString()}`);
 }
 
 export function fetchBacktest(q: SignalQuery & { limit?: number }): Promise<BacktestResponse> {

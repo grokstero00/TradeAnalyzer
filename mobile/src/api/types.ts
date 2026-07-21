@@ -11,6 +11,21 @@ export type ExchangeId = "binance" | "bybit" | "mt5";
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 export type SignalAction = "BUY" | "SELL" | "HOLD";
 
+export interface Candle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface CandlesResponse {
+  candles: Candle[];
+  isSample: boolean;
+  note?: string;
+}
+
 export interface IndicatorVote {
   name: string;
   vote: SignalAction;
