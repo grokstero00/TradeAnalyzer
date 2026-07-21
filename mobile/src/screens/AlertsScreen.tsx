@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { clearAlerts, evaluateAlerts, fetchAlerts, markAlertsSeen } from "../api/client";
 import { ensureNotificationPermission, notifyLocal } from "../api/notify";
+import { WatchlistEditor } from "../components/WatchlistEditor";
 import type { Alert, WatchItem } from "../api/types";
 import { actionColor, colors, radius, spacing } from "../theme/theme";
 
@@ -99,10 +100,13 @@ export function AlertsScreen() {
         </Pressable>
       </View>
 
-      <Text style={styles.watching}>
-        Monitoring {watchlist.length} market{watchlist.length === 1 ? "" : "s"}:{" "}
-        {watchlist.map((w) => w.symbol).join(", ")} · alerts fire when the signal action changes.
-      </Text>
+      <WatchlistEditor
+        watchlist={watchlist}
+        onSaved={(items) => {
+          setWatchlist(items);
+          setBanner(`Watchlist updated — monitoring ${items.length} market${items.length === 1 ? "" : "s"}.`);
+        }}
+      />
 
       {banner && <Text style={styles.banner}>{banner}</Text>}
       {error && <Text style={styles.error}>{error}</Text>}
@@ -155,7 +159,6 @@ const styles = StyleSheet.create({
   btnText: { color: colors.text, fontWeight: "600" },
   btnPrimary: { backgroundColor: colors.accent, borderColor: colors.accent, flex: 2 },
   btnPrimaryText: { color: "#fff", fontWeight: "700" },
-  watching: { color: colors.textMuted, fontSize: 12, lineHeight: 18, marginBottom: spacing.md },
   banner: {
     color: colors.accent,
     backgroundColor: "rgba(59,130,246,0.12)",

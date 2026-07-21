@@ -18,7 +18,7 @@ product you'd trust with real decisions (and, eventually, real orders).
 - [x] Candlestick charts in the app (SVG, `react-native-svg`) with an SMA overlay
 - [ ] More overlays (EMA, Bollinger bands) and volume sub-panel
 - [ ] WebSocket live price streaming instead of polling
-- [ ] Persist a user-editable watchlist (backend watchlist API exists; add UI)
+- [x] User-editable watchlist (add/remove markets in the app; persisted via the backend watchlist API)
 - [ ] Caching / rate-limit handling for exchange calls
 
 ## Phase 3 — Alerts & accounts

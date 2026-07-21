@@ -8,6 +8,7 @@ import type {
   ExchangeId,
   SignalResponse,
   Timeframe,
+  WatchItem,
 } from "./types";
 
 const BASE_URL_KEY = "tradeanalyzer.baseUrl";
@@ -94,6 +95,13 @@ export function markAlertsSeen(): Promise<{ unseen: number }> {
 
 export function clearAlerts(): Promise<{ alerts: [] }> {
   return request<{ alerts: [] }>("/api/alerts/clear", { method: "POST" });
+}
+
+export function setWatchlist(items: WatchItem[]): Promise<{ watchlist: WatchItem[] }> {
+  return request<{ watchlist: WatchItem[] }>("/api/alerts/watchlist", {
+    method: "PUT",
+    body: JSON.stringify(items),
+  });
 }
 
 export function listKeys(): Promise<ExchangeAccountPublic[]> {
