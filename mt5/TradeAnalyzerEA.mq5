@@ -406,8 +406,11 @@ void OpenTrade(int action, double score, string why)
    if(!RespectsStopLevel(action, entry, sl, tp))
    { Print("Cannot open: SL/TP inside broker's stop level."); return; }
 
-   double lot = CalcLotByRisk(stopDist);
+   double lot = CalcLotByRisk(action, entry, sl);
    if(lot <= 0) { Print("Cannot open: computed lot <= 0."); return; }
+
+   // Actual money at risk for this exact order, per the broker's own math.
+   double plannedLoss = MoneyRisk(action, entry, sl, lot);
 
    string cmt = StringFormat("%s score=%.2f", InpTradeComment, score);
    bool ok;
@@ -417,8 +420,10 @@ void OpenTrade(int action, double score, string why)
    if(ok)
    {
       tradesToday++;
-      PrintFormat("OPEN %s lot=%.2f entry~%.2f SL=%.2f TP=%.2f (risk %.2f%%) | %s",
-                  (action>0?"BUY":"SELL"), lot, entry, sl, tp, InpRiskPercent, why);
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      PrintFormat("OPEN %s lot=%.2f entry~%.2f SL=%.2f TP=%.2f | risk=$%.2f (%.2f%% of equity) | %s",
+                  (action>0?"BUY":"SELL"), lot, entry, sl, tp,
+                  plannedLoss, (equity>0 ? plannedLoss/equity*100.0 : 0.0), why);
    }
    else
    {
@@ -426,19 +431,33 @@ void OpenTrade(int action, double score, string why)
    }
 }
 
+// Money that a position of `lot` would lose going from `entry` to `sl`, using
+// the broker's own contract math (handles gold, indices, FX, any symbol).
+double MoneyRisk(int action, double entry, double sl, double lot)
+{
+   ENUM_ORDER_TYPE ot = (action > 0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   double profit = 0.0;
+   if(!OrderCalcProfit(ot, _Symbol, lot, entry, sl, profit))
+      return 0.0;
+   return MathAbs(profit);   // entry->SL is a loss; report it positive
+}
+
 //--- Position sizing: risk % of balance across the stop distance ----
-double CalcLotByRisk(double stopDistPrice)
+double CalcLotByRisk(int action, double entry, double sl)
 {
    double balance   = AccountInfoDouble(ACCOUNT_BALANCE);
    double riskMoney = balance * InpRiskPercent / 100.0;
 
-   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   if(tickSize <= 0 || tickValue <= 0) return 0.0;
-
-   // Loss per 1.0 lot if price moves stopDistPrice against us.
-   double lossPerLot = (stopDistPrice / tickSize) * tickValue;
-   if(lossPerLot <= 0) return 0.0;
+   // Ask the terminal how much 1.0 lot loses from entry to the stop. This is
+   // the authoritative contract math — far more reliable across brokers than
+   // hand-rolled TICK_VALUE / TICK_SIZE arithmetic (which mis-sized gold on
+   // some feeds, producing ~3x the intended risk).
+   double lossPerLot = MoneyRisk(action, entry, sl, 1.0);
+   if(lossPerLot <= 0.0)
+   {
+      Print("Cannot size: OrderCalcProfit returned <= 0 for 1 lot.");
+      return 0.0;
+   }
 
    double lot = riskMoney / lossPerLot;
 
