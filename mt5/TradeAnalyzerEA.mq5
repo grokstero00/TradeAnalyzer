@@ -49,10 +49,16 @@ input double InpRiskPercent    = 0.5;         // Risk per trade, % of balance
 input int    InpAtrPeriod      = 14;          // ATR period (stop distance)
 input double InpAtrStopMult    = 1.5;         // Stop distance = ATR * this
 input double InpRewardRisk     = 2.0;         // Take-profit = risk * this (RR)
-input double InpMaxLot         = 5.0;         // Hard cap on lot size
+input double InpMaxLot         = 5.0;         // Hard cap on lot size (broker units)
+input double InpMaxLotPer10k   = 0.10;        // Exposure cap: max lot per $10k equity (0 = off)
 input double InpDailyLossCapPct= 3.0;         // Stop trading for the day after this % equity loss
 input int    InpMaxTradesPerDay= 5;           // Max NEW trades opened per day
 input int    InpMaxOpenPos     = 1;           // Max simultaneous positions from this EA
+
+//--- Signal quality (reduce over-trading)
+input group "=== Signal quality ==="
+input bool   InpRequireFreshCross = true;     // Enter only on a fresh SMA/MACD cross (not weak trend lean)
+input int    InpCooldownBars      = 2;        // Bars to wait after a position closes before re-entering
 
 //--- Trade management
 input group "=== Trade management ==="
@@ -60,7 +66,7 @@ input bool   InpUseBreakEven   = true;        // Move SL to entry after some pro
 input double InpBreakEvenAtR   = 1.0;         // Trigger break-even at this R (multiple of risk)
 input bool   InpUseTrailing    = true;        // ATR trailing stop
 input double InpTrailAtrMult   = 2.0;         // Trailing distance = ATR * this
-input bool   InpCloseOnOpposite= true;        // Close position when signal flips to opposite
+input bool   InpCloseOnOpposite= false;       // Close on opposite signal (market exit; can exceed planned risk)
 
 //--- Filters (tuned for XAUUSD)
 input group "=== Filters (gold) ==="
@@ -84,6 +90,8 @@ datetime dayStamp     = 0;        // start-of-day marker for daily counters
 double   dayStartEquity = 0.0;
 int      tradesToday  = 0;
 bool     tradingHaltedToday = false;
+datetime lastCloseTime = 0;       // bar time when this EA last went flat (for cooldown)
+int      prevPosCount  = 0;       // EA positions seen on the previous tick
 
 //====================================================================
 //  INIT / DEINIT
@@ -142,18 +150,22 @@ void OnTick()
    // Manage existing positions every tick (trailing / BE / session flatten).
    ManageOpenPositions();
 
+   // Track flat<->in-market transitions so the cooldown knows when we last exited.
+   TrackFlatTransition();
+
    if(InpTradeOnNewBar && !IsNewBar())
       return;
 
    // ---- Compute the signal on the just-closed bar ----
-   int    action = 0;          // +1 BUY, -1 SELL, 0 HOLD
-   double score  = 0.0;
-   string why    = "";
-   if(!ComputeSignal(action, score, why))
+   int    action  = 0;         // +1 BUY, -1 SELL, 0 HOLD
+   double score   = 0.0;
+   string why     = "";
+   int    convDir = 0;         // +1/-1 if a fresh SMA/MACD cross this bar, else 0
+   if(!ComputeSignal(action, score, why, convDir))
       return;                  // not enough data yet
 
-   PrintFormat("Signal: %s (score=%.3f) | %s",
-               (action>0?"BUY":action<0?"SELL":"HOLD"), score, why);
+   PrintFormat("Signal: %s (score=%.3f, conv=%d) | %s",
+               (action>0?"BUY":action<0?"SELL":"HOLD"), score, convDir, why);
 
    // ---- Optionally close on opposite signal ----
    if(InpCloseOnOpposite && action != 0)
@@ -161,6 +173,14 @@ void OnTick()
 
    if(action == 0)
       return;
+
+   // ---- Conviction filter: only enter on a fresh cross, not a weak trend lean ----
+   if(InpRequireFreshCross && convDir != action)
+   {
+      PrintFormat("Entry blocked: no fresh cross in %s direction (conviction gate)",
+                  (action>0?"BUY":"SELL"));
+      return;
+   }
 
    // ---- Entry gating ----
    string block = "";
@@ -174,13 +194,23 @@ void OnTick()
    OpenTrade(action, score, why);
 }
 
+// Detect the moment this EA goes flat and stamp the current bar time, so the
+// cooldown filter can require N bars before the next entry.
+void TrackFlatTransition()
+{
+   int nowPos = CountEaPositions();
+   if(prevPosCount > 0 && nowPos == 0)
+      lastCloseTime = iTime(_Symbol, _Period, 0);
+   prevPosCount = nowPos;
+}
+
 //====================================================================
 //  SIGNAL ENGINE  (ported from backend/signals/signalEngine.ts)
 //====================================================================
 // Returns false if indicator data isn't ready yet.
-bool ComputeSignal(int &action, double &score, string &why)
+bool ComputeSignal(int &action, double &score, string &why, int &convDir)
 {
-   action = 0; score = 0.0; why = "";
+   action = 0; score = 0.0; why = ""; convDir = 0;
 
    // Evaluate on the just-closed bar when trading on new bars (shift=1), or on
    // the current forming bar otherwise (shift=0). Reading price and every
@@ -244,6 +274,14 @@ bool ComputeSignal(int &action, double &score, string &why)
             vW[i] *= COUNTER_TREND_DAMPING;
       }
    }
+
+   // --- Conviction direction: a FRESH SMA or MACD cross carries a high weight
+   // (0.9 / 0.8), while a mere trend "lean" is 0.35 / 0.3. A weight >= 0.75 on
+   // one of these momentum votes means an actual cross happened on this bar.
+   int freshDir = 0;
+   if(vW[1] >= 0.75) freshDir += vDir[1];   // SMA_CROSS fresh cross
+   if(vW[2] >= 0.75) freshDir += vDir[2];   // MACD fresh cross
+   convDir = (freshDir > 0) ? 1 : (freshDir < 0 ? -1 : 0);
 
    // --- Aggregate ---
    double weighted = 0.0, totalW = 0.0;
@@ -321,6 +359,14 @@ bool CanOpenNewTrade(int action, string &block)
    if(tradesToday >= InpMaxTradesPerDay) { block = "max trades/day reached"; return false; }
    if(CountEaPositions() >= InpMaxOpenPos){ block = "max open positions reached"; return false; }
 
+   // Cooldown after the last exit (avoid immediately re-entering into chop).
+   if(InpCooldownBars > 0 && lastCloseTime > 0)
+   {
+      int barsSince = iBarShift(_Symbol, _Period, lastCloseTime, false);
+      if(barsSince < InpCooldownBars)
+      { block = StringFormat("cooldown (%d/%d bars since last exit)", barsSince, InpCooldownBars); return false; }
+   }
+
    // Spread filter
    double spread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > InpMaxSpreadPoints)
@@ -395,6 +441,24 @@ double CalcLotByRisk(double stopDistPrice)
    if(lossPerLot <= 0) return 0.0;
 
    double lot = riskMoney / lossPerLot;
+
+   // --- Exposure cap independent of ATR ---
+   // When ATR is small the stop is tight and the risk-based lot explodes. If
+   // such an oversized position ever exits away from its stop (opposite-signal
+   // market close, session flatten, slippage/gap), the loss far exceeds the
+   // planned %-risk. Cap the lot to a fraction of equity so the worst case
+   // stays bounded regardless of ATR.
+   if(InpMaxLotPer10k > 0)
+   {
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double lotCap = InpMaxLotPer10k * (equity / 10000.0);
+      if(lot > lotCap)
+      {
+         PrintFormat("Lot %.2f capped to %.2f by exposure limit (%.2f lot/$10k, ATR-driven size too large).",
+                     lot, lotCap, InpMaxLotPer10k);
+         lot = lotCap;
+      }
+   }
 
    // Clamp to broker constraints and our hard cap.
    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);

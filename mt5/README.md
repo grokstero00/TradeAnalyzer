@@ -32,6 +32,13 @@ knives"). Votes aggregate into a `score` in `[-1, +1]`; `|score|` below
 
 - **Position sizing** — lot is computed from `RiskPercent` of balance across the
   ATR stop distance (universal `TICK_VALUE`/`TICK_SIZE` math; correct for gold).
+- **Exposure cap** (`MaxLotPer10k`) — bounds lot to a fraction of equity so a
+  low-ATR (tight-stop) entry can't produce an oversized position whose loss
+  balloons if it ever exits away from its stop. **This is what keeps the planned
+  %-risk honest.**
+- **Conviction entry** (`RequireFreshCross`) — enters only on an actual SMA/MACD
+  cross, not a weak "trend lean", so the EA isn't permanently in the market
+  churning spread. A **cooldown** blocks immediate re-entry into chop.
 - **ATR stop & target** — `SL = ATR × AtrStopMult`, `TP = SL × RewardRisk`.
 - **Daily loss cap** — halts new trades for the day after `DailyLossCapPct`
   equity drawdown.
@@ -67,7 +74,11 @@ knives"). Votes aggregate into a `score` in `[-1, +1]`; `|score|` below
 | Input | Default | Meaning |
 |---|---|---|
 | `InpDryRun` | `true` | No orders; log-only. Turn off to trade. |
-| `InpRiskPercent` | `0.5` | Risk per trade, % of balance. |
+| `InpRiskPercent` | `0.5` | Risk per trade, % of balance. **Never optimize this** — fix it. |
+| `InpMaxLotPer10k` | `0.10` | Max lot per $10k equity (exposure cap; `0` = off). |
+| `InpRequireFreshCross` | `true` | Enter only on a fresh SMA/MACD cross. |
+| `InpCooldownBars` | `2` | Bars to wait after an exit before re-entering. |
+| `InpCloseOnOpposite` | `false` | Market-close on signal flip (can exceed planned risk — off by default). |
 | `InpAtrStopMult` | `1.5` | Stop = ATR × this. |
 | `InpRewardRisk` | `2.0` | Take-profit = risk × this. |
 | `InpDailyLossCapPct` | `3.0` | Stop for the day at this % equity loss. |
