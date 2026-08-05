@@ -275,13 +275,13 @@ bool ComputeSignal(int &action, double &score, string &why, int &convDir)
       }
    }
 
-   // --- Conviction direction: a FRESH SMA or MACD cross carries a high weight
-   // (0.9 / 0.8), while a mere trend "lean" is 0.35 / 0.3. A weight >= 0.75 on
-   // one of these momentum votes means an actual cross happened on this bar.
-   int freshDir = 0;
-   if(vW[1] >= 0.75) freshDir += vDir[1];   // SMA_CROSS fresh cross
-   if(vW[2] >= 0.75) freshDir += vDir[2];   // MACD fresh cross
-   convDir = (freshDir > 0) ? 1 : (freshDir < 0 ? -1 : 0);
+   // --- Conviction direction: require an actual SMA 20/50 cross this bar.
+   // A fresh SMA cross carries weight 0.9 (a mere trend "lean" is 0.35). MACD is
+   // deliberately excluded: its histogram flips through zero several times a day
+   // on M15 gold, which made the conviction gate far too permissive (hundreds of
+   // trades). The SMA regime change is a rare, meaningful event — exactly what a
+   // low-frequency, low-risk day-trader wants as an entry trigger.
+   convDir = (vW[1] >= 0.75) ? vDir[1] : 0;   // vName[1] == "SMA_CROSS"
 
    // --- Aggregate ---
    double weighted = 0.0, totalW = 0.0;
