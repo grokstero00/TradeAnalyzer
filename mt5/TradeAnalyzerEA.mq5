@@ -57,7 +57,8 @@ input int    InpMaxOpenPos     = 1;           // Max simultaneous positions from
 
 //--- Signal quality (reduce over-trading)
 input group "=== Signal quality ==="
-input bool   InpRequireFreshCross = true;     // Enter only on a fresh SMA/MACD cross (not weak trend lean)
+input bool   InpRequireFreshCross = true;     // Enter only on a fresh SMA cross (not weak trend lean)
+input int    InpCrossValidBars    = 3;        // A cross stays a valid entry trigger for this many bars
 input int    InpCooldownBars      = 2;        // Bars to wait after a position closes before re-entering
 
 //--- Trade management
@@ -98,6 +99,8 @@ int      tradesToday  = 0;
 bool     tradingHaltedToday = false;
 datetime lastCloseTime = 0;       // bar time when this EA last went flat (for cooldown)
 int      prevPosCount  = 0;       // EA positions seen on the previous tick
+int      pendingDir    = 0;       // direction of the most recent SMA cross (+1/-1, 0 = none)
+datetime pendingBar    = 0;       // bar time of that cross, for the validity window
 
 //====================================================================
 //  INIT / DEINIT
@@ -183,12 +186,33 @@ void OnTick()
    if(action == 0)
       return;
 
-   // ---- Conviction filter: only enter on a fresh cross, not a weak trend lean ----
-   if(InpRequireFreshCross && convDir != action)
+   // ---- Conviction filter -------------------------------------------------
+   // A cross is a one-bar event, but the other gates (spread, session, cooldown)
+   // are evaluated at that same instant — so a signal blocked on the cross bar
+   // used to be lost for good, which starved the EA of trades. Instead, latch
+   // the cross direction and keep it valid for InpCrossValidBars, so a setup
+   // blocked by a transient condition can still be taken a bar or two later.
+   if(convDir != 0)
    {
-      PrintFormat("Entry blocked: no fresh cross in %s direction (conviction gate)",
-                  (action>0?"BUY":"SELL"));
-      return;
+      pendingDir = convDir;
+      pendingBar = iTime(_Symbol, _Period, 0);
+   }
+
+   if(InpRequireFreshCross)
+   {
+      // Expire a stale latch.
+      if(pendingDir != 0 && pendingBar > 0)
+      {
+         int age = iBarShift(_Symbol, _Period, pendingBar, false);
+         if(age > InpCrossValidBars) pendingDir = 0;
+      }
+
+      if(pendingDir != action)
+      {
+         PrintFormat("Entry blocked: no valid %s cross within %d bars (conviction gate)",
+                     (action>0?"BUY":"SELL"), InpCrossValidBars);
+         return;
+      }
    }
 
    // ---- Entry gating ----
@@ -200,7 +224,8 @@ void OnTick()
       return;
    }
 
-   OpenTrade(action, score, why);
+   if(OpenTrade(action, score, why))
+      pendingDir = 0;   // one cross => one trade; don't re-fire on the same latch
 }
 
 // Detect the moment this EA goes flat and stamp the current bar time, so the
@@ -413,10 +438,10 @@ int HtfTrendDir()
 //====================================================================
 //  ORDER PLACEMENT
 //====================================================================
-void OpenTrade(int action, double score, string why)
+bool OpenTrade(int action, double score, string why)
 {
    double atr = GetAtr();
-   if(atr <= 0) { Print("Cannot open: ATR unavailable."); return; }
+   if(atr <= 0) { Print("Cannot open: ATR unavailable."); return false; }
 
    double stopDist = atr * InpAtrStopMult;
    double tpDist   = stopDist * InpRewardRisk;
@@ -433,10 +458,10 @@ void OpenTrade(int action, double score, string why)
 
    // Respect broker's minimum stop distance.
    if(!RespectsStopLevel(action, entry, sl, tp))
-   { Print("Cannot open: SL/TP inside broker's stop level."); return; }
+   { Print("Cannot open: SL/TP inside broker's stop level."); return false; }
 
    double lot = CalcLotByRisk(action, entry, sl);
-   if(lot <= 0) { Print("Cannot open: computed lot <= 0."); return; }
+   if(lot <= 0) { Print("Cannot open: computed lot <= 0."); return false; }
 
    // Actual money at risk for this exact order, per the broker's own math.
    double plannedLoss = MoneyRisk(action, entry, sl, lot);
@@ -458,6 +483,7 @@ void OpenTrade(int action, double score, string why)
    {
       PrintFormat("Order FAILED: retcode=%d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
    }
+   return ok;
 }
 
 // Money that a position of `lot` would lose going from `entry` to `sl`, using
