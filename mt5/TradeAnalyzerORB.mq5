@@ -39,11 +39,13 @@ input int    InpRangeMinutes   = 60;          // Range length in minutes
 input int    InpTradeUntilHour = 17;          // Stop opening new trades after this hour
 input double InpBreakoutBuffer = 20;          // Breakout must clear the range by this many points
 
-//--- Range quality filters (in ATR units, so they adapt to volatility)
+//--- Range quality filters, measured against the DAILY ATR so the thresholds
+//--- mean the same thing on any chart timeframe.
 input group "=== Range quality ==="
-input double InpMinRangeAtr    = 0.5;         // Skip day if range < this * ATR (too quiet/noise)
-input double InpMaxRangeAtr    = 3.0;         // Skip day if range > this * ATR (stop would be huge)
-input int    InpAtrPeriod      = 14;          // ATR period
+input double InpMinRangeDailyAtr = 0.08;      // Skip day if range < this * daily ATR (too quiet)
+input double InpMaxRangeDailyAtr = 0.50;      // Skip day if range > this * daily ATR (stop too wide)
+input int    InpAtrPeriod        = 14;        // ATR period (chart TF, used for trailing)
+input int    InpDailyAtrPeriod   = 14;        // ATR period on D1 (used for range quality)
 
 //--- Risk & money management (same engine as TradeAnalyzerEA)
 input group "=== Risk management ==="
@@ -76,7 +78,7 @@ input bool   InpNoFriday          = false;    // Do not open new trades on Frida
 CTrade         trade;
 CPositionInfo  posInfo;
 
-int hAtr;
+int hAtr, hDailyAtr;
 
 datetime lastBarTime   = 0;
 datetime dayStamp      = 0;      // start-of-day marker for daily counters
@@ -91,6 +93,8 @@ bool     rangeReady    = false;  // range window has closed and was measured
 bool     rangeRejected = false;  // range failed the quality filter today
 bool     tookLong      = false;
 bool     tookShort     = false;
+bool     seenLongBreak = false;  // diagnostics: first up-breakout seen today
+bool     seenShortBreak= false;  // diagnostics: first down-breakout seen today
 
 // --- Diagnostics ---
 long statBars=0, statDayRolls=0, statRangesBuilt=0, statRangeRejected=0;
@@ -107,10 +111,11 @@ int OnInit()
    trade.SetDeviationInPoints(20);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   hAtr = iATR(_Symbol, _Period, InpAtrPeriod);
-   if(hAtr == INVALID_HANDLE)
+   hAtr      = iATR(_Symbol, _Period,   InpAtrPeriod);
+   hDailyAtr = iATR(_Symbol, PERIOD_D1, InpDailyAtrPeriod);
+   if(hAtr == INVALID_HANDLE || hDailyAtr == INVALID_HANDLE)
    {
-      Print("ERROR: failed to create ATR handle.");
+      Print("ERROR: failed to create ATR handle(s).");
       return(INIT_FAILED);
    }
 
@@ -134,6 +139,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    IndicatorRelease(hAtr);
+   IndicatorRelease(hDailyAtr);
    PrintEntryFunnel();
 }
 
@@ -167,7 +173,11 @@ void OnTick()
    if(action == 0)
       return;
 
-   statBreakouts++;
+   // Count a breakout once per direction per day. Price stays outside the range
+   // for many bars after it breaks, so counting every such bar would report
+   // tens of thousands of "breakouts" for a few hundred real setups.
+   if(action > 0 && !seenLongBreak)  { seenLongBreak  = true; statBreakouts++; }
+   if(action < 0 && !seenShortBreak) { seenShortBreak = true; statBreakouts++; }
 
    string block = "";
    if(!CanOpenNewTrade(action, block))
@@ -210,17 +220,22 @@ void TryBuildRange()
       if(rates[i].low  < lo) lo = rates[i].low;
    }
 
-   // Quality filter, expressed in ATR units so it adapts to volatility.
-   double atr  = GetAtr();
+   // Quality filter against the DAILY ATR: "the opening range should be a
+   // sensible fraction of a normal day's move". Measuring against the chart
+   // timeframe's ATR instead would make the thresholds mean something
+   // different on every timeframe (a 60-minute range dwarfs an M5 ATR).
+   double dAtr = GetDailyAtr();
    double size = hi - lo;
-   if(atr > 0)
+   if(dAtr > 0)
    {
-      if(size < InpMinRangeAtr * atr || size > InpMaxRangeAtr * atr)
+      double frac = size / dAtr;
+      if(frac < InpMinRangeDailyAtr || frac > InpMaxRangeDailyAtr)
       {
          rangeRejected = true;
          statRangeRejected++;
-         PrintFormat("Range rejected: size %.2f vs ATR %.2f (allowed %.2f..%.2f x ATR)",
-                     size, atr, InpMinRangeAtr, InpMaxRangeAtr);
+         PrintFormat("Range rejected: size %.2f = %.0f%% of daily ATR %.2f (allowed %.0f%%..%.0f%%)",
+                     size, frac*100.0, dAtr,
+                     InpMinRangeDailyAtr*100.0, InpMaxRangeDailyAtr*100.0);
          return;
       }
    }
@@ -477,6 +492,8 @@ void ResetDailyState()
    rangeLow      = 0.0;
    tookLong      = false;
    tookShort     = false;
+   seenLongBreak = false;
+   seenShortBreak= false;
 }
 
 void RollDailyStateIfNeeded()
@@ -515,6 +532,14 @@ double GetAtr()
 {
    double a[1];
    if(CopyBuffer(hAtr, 0, 0, 1, a) < 1) return 0.0;
+   return a[0];
+}
+
+// Yesterday's ATR on D1 (shift 1 — the current day is still forming).
+double GetDailyAtr()
+{
+   double a[1];
+   if(CopyBuffer(hDailyAtr, 0, 1, 1, a) < 1) return 0.0;
    return a[0];
 }
 
