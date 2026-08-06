@@ -36,9 +36,19 @@ knives"). Votes aggregate into a `score` in `[-1, +1]`; `|score|` below
   low-ATR (tight-stop) entry can't produce an oversized position whose loss
   balloons if it ever exits away from its stop. **This is what keeps the planned
   %-risk honest.**
-- **Conviction entry** (`RequireFreshCross`) — enters only on an actual SMA/MACD
+- **Conviction entry** (`RequireFreshCross`) — enters only on an actual SMA
   cross, not a weak "trend lean", so the EA isn't permanently in the market
   churning spread. A **cooldown** blocks immediate re-entry into chop.
+- **Higher-timeframe trend filter** (`UseHtfFilter`) — a pure entry gate: it
+  only *blocks* trades that fight the H1 trend (price vs H1 SMA200) and touches
+  nothing else. Toggle it off to get the exact pre-filter behavior back.
+
+> **Small accounts & gold:** sizing is % of balance, so risk scales with the
+> account — but the broker's **minimum lot** (0.01) risks ~$10-20 on gold at a
+> typical stop. If 0.5% of your balance is smaller than that, the EA **skips**
+> the trade (it never over-risks) and logs a "balance too small" note. In
+> practice XAUUSD at 0.5% risk needs roughly **$3-5k+**; on very small accounts
+> most trades won't open.
 - **ATR stop & target** — `SL = ATR × AtrStopMult`, `TP = SL × RewardRisk`.
 - **Daily loss cap** — halts new trades for the day after `DailyLossCapPct`
   equity drawdown.
@@ -76,8 +86,11 @@ knives"). Votes aggregate into a `score` in `[-1, +1]`; `|score|` below
 | `InpDryRun` | `true` | No orders; log-only. Turn off to trade. |
 | `InpRiskPercent` | `0.5` | Risk per trade, % of balance. **Never optimize this** — fix it. |
 | `InpMaxLotPer10k` | `0.10` | Max lot per $10k equity (exposure cap; `0` = off). |
-| `InpRequireFreshCross` | `true` | Enter only on a fresh SMA/MACD cross. |
+| `InpRequireFreshCross` | `true` | Enter only on a fresh SMA cross. |
 | `InpCooldownBars` | `2` | Bars to wait after an exit before re-entering. |
+| `InpUseHtfFilter` | `true` | Only trade with the higher-timeframe trend. |
+| `InpHtfTimeframe` | `H1` | Higher timeframe for the trend gate. |
+| `InpHtfMaPeriod` | `200` | SMA period on the higher timeframe. |
 | `InpCloseOnOpposite` | `false` | Market-close on signal flip (can exceed planned risk — off by default). |
 | `InpAtrStopMult` | `1.5` | Stop = ATR × this. |
 | `InpRewardRisk` | `2.0` | Take-profit = risk × this. |

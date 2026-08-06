@@ -68,6 +68,12 @@ input bool   InpUseTrailing    = true;        // ATR trailing stop
 input double InpTrailAtrMult   = 2.0;         // Trailing distance = ATR * this
 input bool   InpCloseOnOpposite= false;       // Close on opposite signal (market exit; can exceed planned risk)
 
+//--- Higher-timeframe trend filter
+input group "=== Higher-timeframe trend filter ==="
+input bool            InpUseHtfFilter = true;             // Only trade in the direction of the HTF trend
+input ENUM_TIMEFRAMES InpHtfTimeframe = PERIOD_H1;        // Higher timeframe for the trend gate
+input int             InpHtfMaPeriod  = 200;              // SMA period on the higher timeframe
+
 //--- Filters (tuned for XAUUSD)
 input group "=== Filters (gold) ==="
 input double InpMaxSpreadPoints= 60.0;        // Skip entries when spread (points) exceeds this
@@ -83,7 +89,7 @@ input bool   InpNoFriday       = false;       // Do not open new trades on Frida
 CTrade         trade;
 CPositionInfo  posInfo;
 
-int hRsi, hSmaShort, hSmaLong, hMacd, hBands, hAtr;
+int hRsi, hSmaShort, hSmaLong, hMacd, hBands, hAtr, hHtfMa;
 
 datetime lastBarTime  = 0;
 datetime dayStamp     = 0;        // start-of-day marker for daily counters
@@ -108,9 +114,11 @@ int OnInit()
    hMacd     = iMACD(_Symbol, _Period, InpMacdFast, InpMacdSlow, InpMacdSignal, PRICE_CLOSE);
    hBands    = iBands(_Symbol, _Period, InpBbPeriod, 0, InpBbMult, PRICE_CLOSE);
    hAtr      = iATR (_Symbol, _Period, InpAtrPeriod);
+   hHtfMa    = iMA (_Symbol, InpHtfTimeframe, InpHtfMaPeriod, 0, MODE_SMA, PRICE_CLOSE);
 
    if(hRsi==INVALID_HANDLE || hSmaShort==INVALID_HANDLE || hSmaLong==INVALID_HANDLE ||
-      hMacd==INVALID_HANDLE || hBands==INVALID_HANDLE || hAtr==INVALID_HANDLE)
+      hMacd==INVALID_HANDLE || hBands==INVALID_HANDLE || hAtr==INVALID_HANDLE ||
+      hHtfMa==INVALID_HANDLE)
    {
       Print("ERROR: failed to create one or more indicator handles.");
       return(INIT_FAILED);
@@ -138,6 +146,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(hMacd);
    IndicatorRelease(hBands);
    IndicatorRelease(hAtr);
+   IndicatorRelease(hHtfMa);
 }
 
 //====================================================================
@@ -378,7 +387,27 @@ bool CanOpenNewTrade(int action, string &block)
    // Friday filter
    if(InpNoFriday && IsFriday())          { block = "no-Friday filter";        return false; }
 
+   // Higher-timeframe trend filter: only trade with the bigger trend.
+   if(InpUseHtfFilter)
+   {
+      int htf = HtfTrendDir();
+      if(htf == 0)          { block = "HTF trend not ready";                    return false; }
+      if(htf != action)     { block = "against higher-timeframe trend";         return false; }
+   }
+
    return true;
+}
+
+// +1 if price is above the higher-timeframe SMA (uptrend), -1 below, 0 unknown.
+int HtfTrendDir()
+{
+   double ma[1];
+   if(CopyBuffer(hHtfMa, 0, 0, 1, ma) < 1) return 0;
+   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(price <= 0 || ma[0] <= 0) return 0;
+   if(price > ma[0]) return 1;
+   if(price < ma[0]) return -1;
+   return 0;
 }
 
 //====================================================================
@@ -488,9 +517,13 @@ double CalcLotByRisk(int action, double entry, double sl)
    lot = MathMin(lot, MathMin(maxLot, InpMaxLot));
    if(lot < minLot)
    {
-      // Would need to exceed our risk to place the min lot — refuse.
-      PrintFormat("Risk %.2f%% too small for min lot %.2f (need %.2f). Skipping.",
-                  InpRiskPercent, minLot, lot);
+      // The min lot would risk MORE than our target %. Refuse rather than
+      // silently over-risk. On gold the min lot (0.01) risks ~$10-20 at a
+      // typical stop, so small accounts can't honor a 0.5% target — this is a
+      // balance-too-small situation, not a bug.
+      double minLotRisk = MoneyRisk(action, entry, sl, minLot);
+      PrintFormat("SKIP: balance too small for %.2f%% risk on %s. Min lot %.2f would risk $%.2f, but target is $%.2f. Increase balance or raise RiskPercent.",
+                  InpRiskPercent, _Symbol, minLot, minLotRisk, riskMoney);
       return 0.0;
    }
    return lot;
