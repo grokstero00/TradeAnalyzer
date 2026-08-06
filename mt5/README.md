@@ -1,9 +1,41 @@
-# TradeAnalyzer EA (MT5) — XAUUSD day-trading
+# TradeAnalyzer EAs (MT5) — XAUUSD day-trading
 
-An Expert Advisor that ports TradeAnalyzer's transparent **weighted-vote signal
-engine** (RSI + SMA-cross + MACD + Bollinger, with a trend-regime filter) into
-MetaTrader 5 and wraps it in a strict **risk-management** shell. Tuned for
-**XAUUSD (gold)**, intraday.
+Two Expert Advisors that share one **risk-management engine** but use different
+entry logic:
+
+| File | Entry idea | Status |
+|---|---|---|
+| `TradeAnalyzerEA.mq5` | Weighted vote of RSI + SMA-cross + MACD + Bollinger | **Backtested: no edge** — see below |
+| `TradeAnalyzerORB.mq5` | Opening Range Breakout (session range) | New — untested |
+
+> **Measured result for `TradeAnalyzerEA`** on XAUUSD M15, 2024-01 → 2026-08
+> (511 trades): profit factor **0.72**, net **−21%**, max drawdown **25%**. A
+> shorter 7-month window looked marginally positive (PF 1.07), but that did not
+> hold up. Treat that EA as a reference implementation of the risk shell, not a
+> strategy to trade.
+
+## The ORB EA (`TradeAnalyzerORB.mq5`)
+
+Marks the high/low of the first N minutes of the session (default 07:00 +60min
+server time), then trades the **first clean breakout** of that range:
+
+- **Stop** sits on the far side of the range — if price travels all the way
+  back through it, the breakout has failed. Risk is the range size, not a guess.
+- **Take-profit** is `RewardRisk` × that risk.
+- **Range quality filter** in ATR units: skip the day if the range is unusually
+  small (noise) or unusually large (stop would be huge).
+- At most one trade per direction per day, `MaxTradesPerDay` overall.
+
+The premise is structural rather than indicator-derived: gold moves impulsively
+when session volume arrives. **This is a hypothesis, not a proven edge** —
+backtest it the same way before believing it.
+
+---
+
+## Shared risk engine
+
+Both EAs use the same money management, which has been verified against the
+tester journal (`risk=$… (0.50% of equity)` on every entry).
 
 > ⚠️ **Not financial advice.** This places real orders when enabled. It does
 > **not** predict the market. Test on a **DEMO** account first. `DryRun` is
