@@ -44,7 +44,7 @@ input double InpBreakoutBuffer = 20;          // Breakout must clear the range b
 input group "=== Range quality ==="
 input double InpMinRangeDailyAtr = 0.08;      // Skip day if range < this * daily ATR (too quiet)
 input double InpMaxRangeDailyAtr = 0.50;      // Skip day if range > this * daily ATR (stop too wide)
-input int    InpAtrPeriod        = 14;        // ATR period (chart TF, used for trailing)
+input int    InpAtrPeriod        = 14;        // ATR period (chart TF, fallback only)
 input int    InpDailyAtrPeriod   = 14;        // ATR period on D1 (used for range quality)
 
 //--- Risk & money management (same engine as TradeAnalyzerEA)
@@ -62,8 +62,8 @@ input bool   InpOnePerDirection= true;        // At most one breakout trade per 
 input group "=== Trade management ==="
 input bool   InpUseBreakEven   = true;        // Move SL to entry after some profit
 input double InpBreakEvenAtR   = 1.0;         // Trigger break-even at this R (multiple of risk)
-input bool   InpUseTrailing    = true;        // ATR trailing stop
-input double InpTrailAtrMult   = 2.0;         // Trailing distance = ATR * this
+input bool   InpUseTrailing    = true;        // Trailing stop (in units of initial risk R)
+input double InpTrailRMult     = 1.5;         // Trailing distance = this * initial risk R
 
 //--- Filters
 input group "=== Filters (gold) ==="
@@ -430,8 +430,17 @@ void ManageOpenPositions()
       double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-      double newSL    = curSL;
-      double riskDist = (curSL > 0) ? MathAbs(open - curSL) : atr;
+      double newSL = curSL;
+
+      // Initial risk R, recovered from the take-profit rather than the stop:
+      // TP was placed at entry +/- R * RewardRisk and never moves, whereas the
+      // stop does. Deriving R from a moving stop would shrink the trailing
+      // distance every time it tightened, strangling the trade.
+      double riskDist = 0.0;
+      if(curTP > 0 && InpRewardRisk > 0)
+         riskDist = MathAbs(curTP - open) / InpRewardRisk;
+      if(riskDist <= 0)
+         riskDist = (curSL > 0) ? MathAbs(open - curSL) : atr;
 
       // --- Break-even ---
       if(InpUseBreakEven && riskDist > 0)
@@ -448,10 +457,10 @@ void ManageOpenPositions()
          }
       }
 
-      // --- ATR trailing ---
-      if(InpUseTrailing && atr > 0)
+      // --- Trailing, measured in R so it behaves identically on any timeframe ---
+      if(InpUseTrailing && riskDist > 0)
       {
-         double trail = atr * InpTrailAtrMult;
+         double trail = riskDist * InpTrailRMult;
          if(type == POSITION_TYPE_BUY)
          {
             double cand = bid - trail;
