@@ -106,7 +106,7 @@ datetime pendingBar    = 0;       // bar time of that cross, for the validity wi
 long statBars=0, statCrosses=0, statBlkHold=0, statBlkConviction=0;
 long statBlkDryRun=0, statBlkDailyCap=0, statBlkMaxTrades=0, statBlkMaxPos=0;
 long statBlkCooldown=0, statBlkSpread=0, statBlkSession=0, statBlkFriday=0;
-long statBlkHtf=0, statBlkHtfNotReady=0, statOpened=0;
+long statBlkHtf=0, statBlkHtfNotReady=0, statOpened=0, statDayRolls=0;
 
 //====================================================================
 //  INIT / DEINIT
@@ -174,6 +174,7 @@ void PrintEntryFunnel()
 {
    Print("================ ENTRY FUNNEL ================");
    PrintFormat("Bars evaluated ............ %I64d", statBars);
+   PrintFormat("Day rollovers (reset) ..... %I64d", statDayRolls);
    PrintFormat("Fresh SMA crosses seen .... %I64d", statCrosses);
    PrintFormat("TRADES OPENED ............. %I64d", statOpened);
    Print("--- rejections (first matching reason) ---");
@@ -712,7 +713,10 @@ void RollDailyStateIfNeeded()
 {
    datetime today = DateOfDay(TimeCurrent());
    if(today != dayStamp)
+   {
+      statDayRolls++;
       ResetDailyState();
+   }
 
    // Daily loss cap on equity.
    if(!tradingHaltedToday && dayStartEquity > 0)
@@ -802,12 +806,15 @@ bool IsFriday()
    return (dt.day_of_week == 5);
 }
 
+// Midnight of the day `t` falls in. Plain integer arithmetic on the epoch
+// seconds: a datetime is seconds since 1970, so dividing by 86400 yields the
+// day number. This replaces a TimeToStruct/StructToTime round-trip that failed
+// to produce a changing value, which left the daily counters permanently stuck
+// (once tradesToday hit the cap, every later entry was rejected for the rest of
+// the run).
 datetime DateOfDay(datetime t)
 {
-   MqlDateTime dt;
-   TimeToStruct(t, dt);
-   dt.hour = 0; dt.min = 0; dt.sec = 0;
-   return StructToTime(dt);
+   return (datetime)(((long)t / 86400) * 86400);
 }
 
 double Clamp01(double x)
