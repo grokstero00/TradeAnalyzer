@@ -37,7 +37,16 @@ input int    InpRangeStartHour = 7;           // Range start hour (server time, 
 input int    InpRangeStartMin  = 0;           // Range start minute
 input int    InpRangeMinutes   = 60;          // Range length in minutes
 input int    InpTradeUntilHour = 17;          // Stop opening new trades after this hour
-input double InpBreakoutBuffer = 20;          // Breakout must clear the range by this many points
+input double InpBreakoutBuffer = 20;          // Breakout buffer in POINTS (used when relative mode is off)
+
+//--- Scale-free mode. Points mean completely different things on XAUUSD, EURUSD
+//--- and US30, so absolute thresholds make cross-instrument comparison unfair.
+//--- Turn this on to express the buffer and the spread limit as a percentage of
+//--- the opening range, which is meaningful on any symbol.
+input group "=== Relative (multi-instrument) mode ==="
+input bool   InpUseRelativeThresholds = false; // Express buffer & spread as % of range
+input double InpBufferPctOfRange      = 1.5;   // Breakout buffer, % of range size
+input double InpMaxSpreadPctOfRange   = 8.0;   // Skip entry if spread exceeds this % of range
 
 //--- Range quality filters, measured against the DAILY ATR so the thresholds
 //--- mean the same thing on any chart timeframe.
@@ -275,10 +284,19 @@ void TryBuildRange()
    PrintFormat("Opening range set: high=%.2f low=%.2f size=%.2f (%d bars)", hi, lo, size, n);
 }
 
+// Breakout buffer in price terms. In relative mode it scales with the range, so
+// the same setting behaves sensibly on gold, FX and indices alike.
+double BreakoutBufferPrice()
+{
+   if(InpUseRelativeThresholds && rangeReady)
+      return (rangeHigh - rangeLow) * InpBufferPctOfRange / 100.0;
+   return InpBreakoutBuffer * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+}
+
 // +1 if the last closed bar broke above the range, -1 below, 0 otherwise.
 int BreakoutDirection()
 {
-   double buffer = InpBreakoutBuffer * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double buffer = BreakoutBufferPrice();
    double close  = iClose(_Symbol, _Period, 1);
    if(close <= 0) return 0;
 
@@ -313,9 +331,18 @@ bool CanOpenNewTrade(int action, string &block)
    if(HourNow() >= InpTradeUntilHour)
    { statBlkTooLate++; block = "past the last entry hour"; return false; }
 
-   double spread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
-   if(spread > InpMaxSpreadPoints)
-   { statBlkSpread++; block = StringFormat("spread %.0f > max %.0f", spread, InpMaxSpreadPoints); return false; }
+   double spreadPts = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
+   if(InpUseRelativeThresholds)
+   {
+      // Compare the spread with the range it has to be paid out of.
+      double spreadPrice = spreadPts * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+      double rangeSize   = rangeHigh - rangeLow;
+      double pct         = (rangeSize > 0) ? spreadPrice / rangeSize * 100.0 : 100.0;
+      if(pct > InpMaxSpreadPctOfRange)
+      { statBlkSpread++; block = StringFormat("spread %.1f%% of range > max %.1f%%", pct, InpMaxSpreadPctOfRange); return false; }
+   }
+   else if(spreadPts > InpMaxSpreadPoints)
+   { statBlkSpread++; block = StringFormat("spread %.0f > max %.0f", spreadPts, InpMaxSpreadPoints); return false; }
 
    if(InpNoFriday && IsFriday())
    { statBlkFriday++; block = "no-Friday filter"; return false; }
@@ -328,7 +355,7 @@ bool CanOpenNewTrade(int action, string &block)
 //====================================================================
 bool OpenTrade(int action)
 {
-   double buffer = InpBreakoutBuffer * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double buffer = BreakoutBufferPrice();
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
