@@ -102,6 +102,12 @@ int      prevPosCount  = 0;       // EA positions seen on the previous tick
 int      pendingDir    = 0;       // direction of the most recent SMA cross (+1/-1, 0 = none)
 datetime pendingBar    = 0;       // bar time of that cross, for the validity window
 
+// --- Diagnostics: why entries were rejected, summarised at the end of a run ---
+long statBars=0, statCrosses=0, statBlkHold=0, statBlkConviction=0;
+long statBlkDryRun=0, statBlkDailyCap=0, statBlkMaxTrades=0, statBlkMaxPos=0;
+long statBlkCooldown=0, statBlkSpread=0, statBlkSession=0, statBlkFriday=0;
+long statBlkHtf=0, statBlkHtfNotReady=0, statOpened=0;
+
 //====================================================================
 //  INIT / DEINIT
 //====================================================================
@@ -150,6 +156,40 @@ void OnDeinit(const int reason)
    IndicatorRelease(hBands);
    IndicatorRelease(hAtr);
    IndicatorRelease(hHtfMa);
+
+   PrintEntryFunnel();
+}
+
+// Called once at the end of a Strategy Tester pass — the funnel is printed here
+// too so it reliably lands in the tester's journal.
+double OnTester()
+{
+   PrintEntryFunnel();
+   return 0.0;
+}
+
+// One-shot summary of where entry opportunities went. Read this instead of
+// guessing which filter is starving the EA of trades.
+void PrintEntryFunnel()
+{
+   Print("================ ENTRY FUNNEL ================");
+   PrintFormat("Bars evaluated ............ %I64d", statBars);
+   PrintFormat("Fresh SMA crosses seen .... %I64d", statCrosses);
+   PrintFormat("TRADES OPENED ............. %I64d", statOpened);
+   Print("--- rejections (first matching reason) ---");
+   PrintFormat("signal HOLD ............... %I64d", statBlkHold);
+   PrintFormat("no valid cross (conviction) %I64d", statBlkConviction);
+   PrintFormat("DryRun .................... %I64d", statBlkDryRun);
+   PrintFormat("daily loss cap ............ %I64d", statBlkDailyCap);
+   PrintFormat("max trades/day ............ %I64d", statBlkMaxTrades);
+   PrintFormat("max open positions ........ %I64d", statBlkMaxPos);
+   PrintFormat("cooldown .................. %I64d", statBlkCooldown);
+   PrintFormat("spread too wide ........... %I64d", statBlkSpread);
+   PrintFormat("outside session ........... %I64d", statBlkSession);
+   PrintFormat("Friday filter ............. %I64d", statBlkFriday);
+   PrintFormat("against HTF trend ......... %I64d", statBlkHtf);
+   PrintFormat("HTF not ready ............. %I64d", statBlkHtfNotReady);
+   Print("=============================================");
 }
 
 //====================================================================
@@ -168,6 +208,8 @@ void OnTick()
    if(InpTradeOnNewBar && !IsNewBar())
       return;
 
+   statBars++;
+
    // ---- Compute the signal on the just-closed bar ----
    int    action  = 0;         // +1 BUY, -1 SELL, 0 HOLD
    double score   = 0.0;
@@ -179,24 +221,23 @@ void OnTick()
    PrintFormat("Signal: %s (score=%.3f, conv=%d) | %s",
                (action>0?"BUY":action<0?"SELL":"HOLD"), score, convDir, why);
 
+   // ---- Latch a fresh cross BEFORE any early return ----
+   // A cross is a one-bar event. It must be recorded the moment it happens,
+   // even if the aggregate signal reads HOLD on that bar, otherwise the setup
+   // is lost for good. The latch stays valid for InpCrossValidBars.
+   if(convDir != 0)
+   {
+      pendingDir = convDir;
+      pendingBar = iTime(_Symbol, _Period, 0);
+      statCrosses++;
+   }
+
    // ---- Optionally close on opposite signal ----
    if(InpCloseOnOpposite && action != 0)
       CloseOppositePositions(action);
 
    if(action == 0)
-      return;
-
-   // ---- Conviction filter -------------------------------------------------
-   // A cross is a one-bar event, but the other gates (spread, session, cooldown)
-   // are evaluated at that same instant — so a signal blocked on the cross bar
-   // used to be lost for good, which starved the EA of trades. Instead, latch
-   // the cross direction and keep it valid for InpCrossValidBars, so a setup
-   // blocked by a transient condition can still be taken a bar or two later.
-   if(convDir != 0)
-   {
-      pendingDir = convDir;
-      pendingBar = iTime(_Symbol, _Period, 0);
-   }
+   { statBlkHold++; return; }
 
    if(InpRequireFreshCross)
    {
@@ -208,11 +249,7 @@ void OnTick()
       }
 
       if(pendingDir != action)
-      {
-         PrintFormat("Entry blocked: no valid %s cross within %d bars (conviction gate)",
-                     (action>0?"BUY":"SELL"), InpCrossValidBars);
-         return;
-      }
+      { statBlkConviction++; return; }
    }
 
    // ---- Entry gating ----
@@ -225,7 +262,10 @@ void OnTick()
    }
 
    if(OpenTrade(action, score, why))
+   {
+      statOpened++;
       pendingDir = 0;   // one cross => one trade; don't re-fire on the same latch
+   }
 }
 
 // Detect the moment this EA goes flat and stamp the current bar time, so the
@@ -388,36 +428,36 @@ bool CanOpenNewTrade(int action, string &block)
 {
    block = "";
 
-   if(InpDryRun)                { block = "DryRun mode (no orders)"; return false; }
-   if(tradingHaltedToday)       { block = "daily loss cap hit";      return false; }
-   if(tradesToday >= InpMaxTradesPerDay) { block = "max trades/day reached"; return false; }
-   if(CountEaPositions() >= InpMaxOpenPos){ block = "max open positions reached"; return false; }
+   if(InpDryRun)                { statBlkDryRun++;   block = "DryRun mode (no orders)"; return false; }
+   if(tradingHaltedToday)       { statBlkDailyCap++; block = "daily loss cap hit";      return false; }
+   if(tradesToday >= InpMaxTradesPerDay) { statBlkMaxTrades++; block = "max trades/day reached"; return false; }
+   if(CountEaPositions() >= InpMaxOpenPos){ statBlkMaxPos++;  block = "max open positions reached"; return false; }
 
    // Cooldown after the last exit (avoid immediately re-entering into chop).
    if(InpCooldownBars > 0 && lastCloseTime > 0)
    {
       int barsSince = iBarShift(_Symbol, _Period, lastCloseTime, false);
       if(barsSince < InpCooldownBars)
-      { block = StringFormat("cooldown (%d/%d bars since last exit)", barsSince, InpCooldownBars); return false; }
+      { statBlkCooldown++; block = StringFormat("cooldown (%d/%d bars since last exit)", barsSince, InpCooldownBars); return false; }
    }
 
    // Spread filter
    double spread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
    if(spread > InpMaxSpreadPoints)
-   { block = StringFormat("spread %.0f > max %.0f", spread, InpMaxSpreadPoints); return false; }
+   { statBlkSpread++; block = StringFormat("spread %.0f > max %.0f", spread, InpMaxSpreadPoints); return false; }
 
    // Session filter
-   if(InpUseSession && !InSession())      { block = "outside trading session"; return false; }
+   if(InpUseSession && !InSession())      { statBlkSession++; block = "outside trading session"; return false; }
 
    // Friday filter
-   if(InpNoFriday && IsFriday())          { block = "no-Friday filter";        return false; }
+   if(InpNoFriday && IsFriday())          { statBlkFriday++;  block = "no-Friday filter";        return false; }
 
    // Higher-timeframe trend filter: only trade with the bigger trend.
    if(InpUseHtfFilter)
    {
       int htf = HtfTrendDir();
-      if(htf == 0)          { block = "HTF trend not ready";                    return false; }
-      if(htf != action)     { block = "against higher-timeframe trend";         return false; }
+      if(htf == 0)          { statBlkHtfNotReady++; block = "HTF trend not ready";            return false; }
+      if(htf != action)     { statBlkHtf++;         block = "against higher-timeframe trend"; return false; }
    }
 
    return true;
