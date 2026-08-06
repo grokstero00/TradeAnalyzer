@@ -5,30 +5,67 @@ entry logic:
 
 | File | Entry idea | Status |
 |---|---|---|
-| `TradeAnalyzerEA.mq5` | Weighted vote of RSI + SMA-cross + MACD + Bollinger | **Backtested: no edge** — see below |
-| `TradeAnalyzerORB.mq5` | Opening Range Breakout (session range) | New — untested |
+| `TradeAnalyzerEA.mq5` | Weighted vote of RSI + SMA-cross + MACD + Bollinger | **No edge** — reference only |
+| `TradeAnalyzerORB.mq5` | Opening Range Breakout (session range) | Positive in backtest, **not yet forward-tested** |
 
-> **Measured result for `TradeAnalyzerEA`** on XAUUSD M15, 2024-01 → 2026-08
-> (511 trades): profit factor **0.72**, net **−21%**, max drawdown **25%**. A
-> shorter 7-month window looked marginally positive (PF 1.07), but that did not
-> hold up. Treat that EA as a reference implementation of the risk shell, not a
-> strategy to trade.
+> **`TradeAnalyzerEA`** on XAUUSD M15, 2024-01 → 2026-08 (511 trades): profit
+> factor **0.72**, net **−21%**, max drawdown **25%**. A shorter 7-month window
+> looked marginally positive (PF 1.07) but did not hold up. Keep it as a
+> reference implementation of the risk shell, not a strategy to trade.
 
 ## The ORB EA (`TradeAnalyzerORB.mq5`)
 
-Marks the high/low of the first N minutes of the session (default 07:00 +60min
-server time), then trades the **first clean breakout** of that range:
+Marks the high/low of the first N minutes of the session, then trades the
+**first clean breakout** of that range:
 
 - **Stop** sits on the far side of the range — if price travels all the way
   back through it, the breakout has failed. Risk is the range size, not a guess.
 - **Take-profit** is `RewardRisk` × that risk.
-- **Range quality filter** in ATR units: skip the day if the range is unusually
-  small (noise) or unusually large (stop would be huge).
-- At most one trade per direction per day, `MaxTradesPerDay` overall.
+- **Range quality filter** against the *daily* ATR: skip the day if the range is
+  unusually small (noise) or unusually large (stop would be huge).
+- One breakout trade per day.
 
-The premise is structural rather than indicator-derived: gold moves impulsively
-when session volume arrives. **This is a hypothesis, not a proven edge** —
-backtest it the same way before believing it.
+### Measured configuration
+
+XAUUSD **M5**, 2025-05-27 → 2026-08-06 (100% tick-history quality, random
+execution delay), 246 trades:
+
+| Metric | Value |
+|---|---|
+| Profit factor | **1.18** |
+| Net | +10.0% |
+| Max drawdown | **5.45%** |
+| Win rate | 37.8% (break-even needs 34.0%) |
+| Avg win / avg loss | 1.94 |
+
+Split-sample check — both halves profitable:
+
+| Period | Trades | PF | Drawdown |
+|---|---|---|---|
+| 2025-05-27 → 2025-12-31 | 132 | 1.11 | 5.51% |
+| 2026-01-01 → 2026-08-06 | 115 | 1.43 | 2.67% |
+
+Settings used: `RangeStartHour=7`, `RangeMinutes=60`, `TradeUntilHour=17`,
+`SessionEndHour=20`, `MaxTradesPerDay=1`, `UseTrailing=false`,
+`UseBreakEven=false`, `RiskPercent=0.5`, `RewardRisk=2.0`.
+
+**`RangeStartHour` is in broker server time.** On a GMT+3 server, 07:00 covers
+04:00–05:00 GMT — the quiet end of the Asian session. The narrow range gives a
+tight stop, and the breakout runs into the London open. Testing the London open
+range itself (11:00 server) was clearly worse: PF 0.92 over the same period. The
+EA prints the server offset and the London/NY opens in server hours at startup —
+attach it to a live chart and read the log before choosing the hour.
+
+### What this result is, and is not
+
+The numbers above are honest — clean tick data, execution delay, and both halves
+of the sample profitable. But three settings (trailing off, hour 7, one trade
+per day) were each chosen by looking at this same 14-month window, so the split
+test measures *stability*, not true out-of-sample performance. With 246 trades
+the confidence interval around a 37.8% win rate is several points wide.
+
+**The next step is a forward test on a demo account**, left untouched for a
+month or more. History always knows a little too much; a live demo does not.
 
 ---
 
