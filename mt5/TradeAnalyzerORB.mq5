@@ -133,7 +133,35 @@ int OnInit()
       AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_REAL)
       Print("WARNING: live trading is ENABLED on a REAL account.");
 
+   ReportSessionClock();
+
    return(INIT_SUCCEEDED);
+}
+
+// The whole premise of ORB is that the range covers a real session open, and
+// RangeStartHour is in BROKER SERVER time — which is rarely the trader's own.
+// Print the offset and the session opens expressed in server hours so the
+// setting can be chosen from fact instead of guesswork. Attach the EA to a live
+// chart to read this: inside the tester the clock is simulated.
+void ReportSessionClock()
+{
+   datetime srv = TimeCurrent();
+   datetime gmt = TimeGMT();
+   int offset   = (int)MathRound((double)((long)srv - (long)gmt) / 3600.0);
+
+   // Session opens in GMT/UTC: London 08:00, New York 13:30 (12:30 in summer
+   // for the equity/futures open, but 13:30 GMT is the usual FX/metals mark).
+   int londonSrv = ((8  + offset) % 24 + 24) % 24;
+   int nySrv     = ((13 + offset) % 24 + 24) % 24;
+
+   Print("---------- SESSION CLOCK ----------");
+   PrintFormat("Server time  : %s", TimeToString(srv, TIME_DATE|TIME_MINUTES));
+   PrintFormat("GMT/UTC time : %s", TimeToString(gmt, TIME_DATE|TIME_MINUTES));
+   PrintFormat("Server offset: GMT%+d", offset);
+   PrintFormat("London open (08:00 GMT) = %02d:00 server  <-- try RangeStartHour = %d", londonSrv, londonSrv);
+   PrintFormat("New York open (13:00 GMT) = %02d:00 server  <-- or RangeStartHour = %d", nySrv, nySrv);
+   PrintFormat("Currently configured RangeStartHour = %d", InpRangeStartHour);
+   Print("-----------------------------------");
 }
 
 void OnDeinit(const int reason)
