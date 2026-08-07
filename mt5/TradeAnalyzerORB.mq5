@@ -154,9 +154,20 @@ int OnInit()
 // chart to read this: inside the tester the clock is simulated.
 void ReportSessionClock()
 {
-   datetime srv = TimeCurrent();
+   // TimeCurrent() is the timestamp of the last known tick, so on a weekend or
+   // on a symbol with no fresh quotes it goes stale and the computed offset is
+   // nonsense. TimeTradeServer() is derived from the terminal's own clock and
+   // stays correct without ticks.
+   datetime srv = TimeTradeServer();
+   if(srv <= 0) srv = TimeCurrent();
    datetime gmt = TimeGMT();
    int offset   = (int)MathRound((double)((long)srv - (long)gmt) / 3600.0);
+
+   if(offset < -12 || offset > 14)
+   {
+      PrintFormat("SESSION CLOCK: implausible offset GMT%+d — clock source is stale, ignore these hours.", offset);
+      return;
+   }
 
    // Session opens in GMT/UTC: London 08:00, New York 13:30 (12:30 in summer
    // for the equity/futures open, but 13:30 GMT is the usual FX/metals mark).
