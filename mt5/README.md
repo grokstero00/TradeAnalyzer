@@ -56,6 +56,27 @@ range itself (11:00 server) was clearly worse: PF 0.92 over the same period. The
 EA prints the server offset and the London/NY opens in server hours at startup —
 attach it to a live chart and read the log before choosing the hour.
 
+### Cross-instrument check: the edge did not generalize
+
+The same rules, unchanged, over the same period (relative thresholds on,
+exposure cap off so position sizing is undistorted):
+
+| Symbol | PF | Avg win / avg loss | Break-even WR | Actual WR |
+|---|---|---|---|---|
+| **XAUUSD** | **1.28** | 1.96 | 33.7% | **39.4%** |
+| XAGUSD | 0.92 | 1.53 | 39.6% | 37.5% |
+| EURUSD | 0.82 | 1.28 | 43.9% | 38.9% |
+| USDJPY | 0.83 | 1.53 | 39.5% | 35.3% |
+
+One instrument out of four. Win rates are similar everywhere (35–39%); the
+whole difference is the win/loss ratio — after a breakout gold travels further
+relative to its stop, while the FX majors revert sooner. That is a plausible
+description of a real property of gold *and* an equally plausible description
+of having fitted to gold. A backtest cannot separate the two, which is exactly
+what this check was meant to settle.
+
+Treat the gold figures accordingly: an unconfirmed, single-instrument result.
+
 ### What this result is, and is not
 
 The numbers above are honest — clean tick data, execution delay, and both halves
