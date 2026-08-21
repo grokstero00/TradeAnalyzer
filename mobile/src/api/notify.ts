@@ -10,8 +10,11 @@ import * as Notifications from "expo-notifications";
 // Show notifications even when the app is foregrounded.
 if (Platform.OS !== "web") {
   Notifications.setNotificationHandler({
+    // SDK 54+ replaced the single `shouldShowAlert` with the more granular
+    // banner/list pair.
     handleNotification: async () => ({
-      shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
       shouldPlaySound: false,
       shouldSetBadge: true,
     }),

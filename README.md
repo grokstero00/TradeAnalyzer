@@ -84,6 +84,10 @@ npm install
 npx expo start              # scan the QR with Expo Go, or press i / a for simulators
 ```
 
+The app targets **Expo SDK 54** (React Native 0.81, React 19, New Architecture).
+Install the current **Expo Go** from the App Store / Play Store — it only supports
+the latest SDK, so an older Expo Go will refuse to open the project.
+
 In the app's **Settings** tab, set the backend URL:
 - iOS simulator: `http://localhost:4000`
 - Android emulator: `http://10.0.2.2:4000`

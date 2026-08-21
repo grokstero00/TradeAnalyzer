@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "scheme": "tradeanalyzer",
+    "newArchEnabled": true,
     "splash": {
       "backgroundColor": "#0B0E11"
     },
