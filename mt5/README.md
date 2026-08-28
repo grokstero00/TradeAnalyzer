@@ -7,6 +7,20 @@ entry logic:
 |---|---|---|
 | `TradeAnalyzerEA.mq5` | Weighted vote of RSI + SMA-cross + MACD + Bollinger | **No edge** — reference only |
 | `TradeAnalyzerORB.mq5` | Opening Range Breakout (session range) | Positive in backtest, **not yet forward-tested** |
+| `TradeAnalyzerScalper.mq5` | M1 mean-reversion fade of an EMA extension | **Conclusively negative** — see below |
+
+> **`TradeAnalyzerScalper`** on XAUUSD M1, 2025-05-27 → 2026-08-28 (100% tick
+> quality), 5931 trades: profit factor **0.88**, net **−49.9%**, max drawdown
+> **51%**. Expectancy −$0.84 per trade with a per-trade standard deviation of
+> $13.57, so **t = −4.74** — unlike the other two results this one is
+> statistically conclusive, which is the one thing high trade counts buy you.
+>
+> Two things went wrong, and the second matters more. Costs: break-even needed
+> a 54.4% win rate against the 51.35% achieved. And the signal itself was worse
+> than nothing — with a 1.0 ATR target against a 1.2 ATR stop, a coin-flip entry
+> wins 1.2/2.2 = 54.5% of the time in a driftless walk, so the fade *subtracted*
+> value. On a one-minute scale gold continues after an extension more often than
+> it reverts; the strategy was fading live momentum.
 
 > **`TradeAnalyzerEA`** on XAUUSD M15, 2024-01 → 2026-08 (511 trades): profit
 > factor **0.72**, net **−21%**, max drawdown **25%**. A shorter 7-month window
