@@ -1,0 +1,40 @@
+; XAUUSD — New York open range (13:00 GMT). Second, independent setup
+; alongside the Asian-range one. Untested: NY was only ever tried as a
+; REPLACEMENT for the Asian hour, never as an addition.
+; Rules are IDENTICAL to the measured XAUUSD configuration — only the session
+; hours change. Do not tune anything else: the point of this test is whether
+; the same rules work elsewhere, not whether some rules can be made to work.
+; Period: 2025.05.27 -> today, real ticks, random delay, deposit 100000.
+; CHECK "history quality" after the run — below ~90% the result is unreliable.
+
+InpMagic=20260811
+InpTradeComment=ORB
+InpRangeStartHour=16
+InpRangeStartMin=0
+InpRangeMinutes=60
+InpTradeUntilHour=22
+InpSessionEndHour=23
+InpDryRun=false
+InpUseRelativeThresholds=true
+InpBufferPctOfRange=1.5
+InpMaxSpreadPctOfRange=8.0
+InpMinRangeDailyAtr=0.08
+InpMaxRangeDailyAtr=0.5
+InpAtrPeriod=14
+InpDailyAtrPeriod=14
+InpRiskPercent=0.5
+InpRewardRisk=2.0
+InpMaxLot=5.0
+InpMaxLotPer10k=0
+InpDailyLossCapPct=3.0
+InpMaxTradesPerDay=1
+InpMaxOpenPos=1
+InpOnePerDirection=true
+InpUseBreakEven=false
+InpBreakEvenAtR=1.0
+InpUseTrailing=false
+InpTrailRMult=1.5
+InpBreakoutBuffer=20
+InpMaxSpreadPoints=60.0
+InpCloseAtSessionEnd=true
+InpNoFriday=false
