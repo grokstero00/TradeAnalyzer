@@ -50,6 +50,34 @@ came back, what that revenue is worth against what the system costs. And
 members drift back with no message at all — without it the report takes credit
 for people who were always returning.
 
+## Loading a real business's data
+
+The point of the importer is one moment: sitting with an owner, asking for
+whatever export they already have, and showing them their own members — by
+name, with the revenue those members represent — a minute later. A demo built
+on invented people argues the idea could work; their own data shows what it
+already found.
+
+```bash
+node src/cli/analyze.ts clients.csv [visits.csv] --price=400 --cost=1000
+```
+
+It reports what it read before it reports any conclusions: which column it
+used for each field, how many rows were skipped and why. Nothing is invented
+silently, and a file it cannot fully understand still produces a partial
+answer rather than an error.
+
+Real exports are messy in specific, predictable ways, all of which are handled:
+semicolon delimiters (the Russian-locale Excel default), a UTF-8 BOM, CRLF
+endings, quoted fields containing the delimiter, day-first dates, Excel serial
+dates, `1 200,50` and `1,200.50` in the same column, prices written as
+`400 манат`. Visit logs rarely share a key with the member list, so clients are
+indexed by id, phone and name, and each row matches on whichever the log uses.
+
+**Where no attendance data exists**, the summary says so instead of showing an
+empty at-risk list as though it were good news — expiry and renewal reminders
+still work from the member list alone, which needs no daily input from anyone.
+
 ## Layout
 
 ```
@@ -58,7 +86,10 @@ src/domain/     pure functions, no database, fully unit-tested
   retention.ts    rhythm-based lapse detection, expiry windows, revenue at risk
   roi.ts          did the outreach pay for itself, against a no-contact baseline
   dataQuality.ts  is attendance still being recorded properly
-src/demo/       deterministic fake chain (8 venues, 1500 members) + owner report
+src/ingest/     CSV reading, value parsing, fuzzy column detection, import
+src/report/     the owner-facing summary, shared by demo and real data
+src/cli/        analyze.ts — point it at a real export
+src/demo/       deterministic fake chain (8 venues, 1500 members)
 ```
 
 Attendance capture is deliberately pluggable: `Visit.source` is one of
@@ -71,13 +102,15 @@ where turnstiles exist, the system needs no daily human input at all.
 Requires Node 22.18+ (TypeScript runs natively, no build step, no dependencies).
 
 ```bash
-npm test     # 26 unit tests across detection, ROI and data quality
-npm run demo # prints the owner-facing summary from generated data
+npm test        # 57 unit tests across detection, ROI, data quality and import
+npm run demo    # owner summary over the generated chain
+npm run sample  # write sample/*.csv in the messy shape a real export has
+node src/cli/analyze.ts sample/clients.csv sample/visits.csv --cost=1000
 ```
 
 ## Status
 
-Domain engine and demo report are done and tested. Not yet built: storage,
-ingestion adapters, web UI, automated messaging. Those follow the first
-conversations with an owner — the demo exists to start that conversation, not
-to be the product.
+Domain engine, CSV import and the owner report are done and tested. Not yet
+built: storage, a web UI, automated messaging. Those follow the first
+conversations with an owner — what exists today is enough to walk into one and
+show a real answer, which is what should shape the rest.

@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Retention engine for membership businesses — gyms first, salons and clinics next",
   "scripts": {
-    "test": "node --test src/domain/retention.test.ts src/domain/roi.test.ts src/domain/dataQuality.test.ts",
-    "demo": "node src/demo/report.ts"
+    "test": "node --test src/domain/retention.test.ts src/domain/roi.test.ts src/domain/dataQuality.test.ts src/ingest/importCsv.test.ts",
+    "demo": "node src/demo/report.ts",
+    "sample": "node src/demo/exportCsv.ts"
   }
 }
