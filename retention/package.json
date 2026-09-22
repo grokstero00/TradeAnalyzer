@@ -1,0 +1,11 @@
+{
+  "name": "@retention/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Retention engine for membership businesses — gyms first, salons and clinics next",
+  "scripts": {
+    "test": "node --test src/domain/retention.test.ts src/domain/roi.test.ts src/domain/dataQuality.test.ts",
+    "demo": "node src/demo/report.ts"
+  }
+}
