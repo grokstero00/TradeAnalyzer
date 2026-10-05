@@ -19,9 +19,11 @@ test would otherwise take months to answer:
 
 Usage:
     python3 orb_lab.py XAUUSD_M5.csv [--from 2015-01-01] [--to 2026-12-31] [--out report.md]
+    python3 orb_lab.py HISTDATA_*.csv --spread-points 30
 
-The CSV comes from ExportBars.mq5 (MQL5/Files/XAUUSD_M5.csv). Zipped or
-gzipped files are read directly.
+Accepts ExportBars.mq5 output (broker time), dukascopy-node CSV (UTC) and
+HistData ASCII M1 (EST). External feeds are moved onto broker time and charged
+a flat spread. Zipped or gzipped files are read directly.
 """
 from __future__ import annotations
 
@@ -62,32 +64,100 @@ class Day:
     atr_prev: float          # D1 ATR as of yesterday's close (EA uses shift 1)
 
 
-def load(path: str) -> tuple[Meta, pd.DataFrame]:
-    meta = Meta()
+def _epoch_seconds(ts: pd.Series) -> pd.Series:
+    """Naive datetimes -> int seconds, independent of pandas' storage unit."""
+    return (ts - pd.Timestamp("1970-01-01")) // pd.Timedelta(seconds=1)
+
+
+def _first_line(path: str) -> str:
+    if path.endswith(".zip"):
+        import zipfile
+        with zipfile.ZipFile(path) as z:
+            with z.open(z.namelist()[0]) as f:
+                return f.readline().decode("utf-8", "replace").strip()
     opener = open
     if path.endswith(".gz"):
         import gzip
         opener = gzip.open
-    if not path.endswith(".zip"):
-        with opener(path, "rt", encoding="utf-8", errors="replace") as f:
-            first = f.readline().strip()
-        if first.startswith("#"):
-            kv = dict(p.split("=", 1) for p in first[1:].split(";") if "=" in p)
-            meta = Meta(
-                symbol=kv.get("symbol", "?"),
-                point=float(kv.get("point", 0.01)),
-                contract=float(kv.get("contract", 100)),
-                gmt_offset_h=int(kv.get("server_gmt_offset_h", 3)),
-            )
-    df = pd.read_csv(path, comment="#")
-    df.columns = [c.strip().lower() for c in df.columns]
+    with opener(path, "rt", encoding="utf-8", errors="replace") as f:
+        return f.readline().strip()
+
+
+def _read_one(path: str) -> tuple[Meta | None, pd.DataFrame, str]:
+    """Returns (meta, bars, clock). Three layouts are recognised:
+      ExportBars.mq5   '#symbol=...' header, unix seconds in BROKER time
+      dukascopy-node   'timestamp,open,...', unix MILLISECONDS in UTC
+      HistData ASCII   '20090315 170000;o;h;l;c;v', no header, EST (UTC-5, no DST)
+    """
+    first = _first_line(path)
+    if first.startswith("#"):
+        kv = dict(p.split("=", 1) for p in first[1:].split(";") if "=" in p)
+        meta = Meta(symbol=kv.get("symbol", "?"), point=float(kv.get("point", 0.01)),
+                    contract=float(kv.get("contract", 100)),
+                    gmt_offset_h=int(kv.get("server_gmt_offset_h", 3)))
+        df = pd.read_csv(path, comment="#")
+        df.columns = [c.strip().lower() for c in df.columns]
+        return meta, df, "server"
+
+    if first.lower().startswith("timestamp"):
+        df = pd.read_csv(path)
+        df.columns = [c.strip().lower() for c in df.columns]
+        df["time"] = df["timestamp"].astype("int64") // 1000
+        return None, df[["time", "open", "high", "low", "close"]], "utc"
+
+    if ";" in first and first[:8].isdigit():
+        df = pd.read_csv(path, sep=";", header=None,
+                         names=["dt", "open", "high", "low", "close", "vol"])
+        t = pd.to_datetime(df["dt"], format="%Y%m%d %H%M%S")
+        df["time"] = _epoch_seconds(t) + 5 * 3600  # EST -> UTC
+        return None, df[["time", "open", "high", "low", "close"]], "utc"
+
+    raise ValueError(f"{path}: unrecognised format (first line: {first[:60]!r})")
+
+
+def to_broker_time(utc_seconds: pd.Series) -> pd.Series:
+    """UTC -> the clock of a typical gold CFD broker: New York time + 7h, i.e.
+    GMT+2 in winter and GMT+3 in summer, so the daily candle closes at the New
+    York close. This is the clock the EA's hours (range 07:00, exit 20:00)
+    were measured on."""
+    ny = pd.to_datetime(utc_seconds, unit="s", utc=True).dt.tz_convert("America/New_York")
+    return _epoch_seconds(ny.dt.tz_localize(None)) + 7 * 3600
+
+
+def load(paths: list[str] | str, spread_points: float = 25.0) -> tuple[Meta, pd.DataFrame]:
+    """Load one or more files (e.g. one HistData file per year), put them on
+    broker time, resample to M5, and fill in a spread where the source has none."""
+    if isinstance(paths, str):
+        paths = [paths]
+    meta, frames, clocks = None, [], set()
+    for p in paths:
+        m, df, clock = _read_one(p)
+        meta = meta or m
+        clocks.add(clock)
+        frames.append(df)
+    if len(clocks) > 1:
+        raise ValueError("Do not mix broker-time and UTC files in one run.")
+    df = pd.concat(frames, ignore_index=True)
     if df["time"].dtype == object:  # tolerate "2024.01.02 07:00" style exports
-        df["time"] = (pd.to_datetime(df["time"].str.replace(".", "-", regex=False))
-                      .astype("int64") // 10**9)
-    df = df.sort_values("time").drop_duplicates("time").reset_index(drop=True)
+        df["time"] = _epoch_seconds(pd.to_datetime(df["time"].str.replace(".", "-", regex=False)))
+    if clocks == {"utc"}:
+        df["time"] = to_broker_time(df["time"])
+        meta = Meta(symbol="XAUUSD (external)")
+    meta = meta or Meta()
+
     if "spread" not in df:
-        df["spread"] = 0
-    return meta, df
+        # Third-party feeds are bid-only. Charge a typical retail gold spread.
+        df["spread"] = spread_points
+        meta.symbol += f", flat spread {spread_points:g}pt"
+
+    df = df.sort_values("time").drop_duplicates("time")
+    # Resample anything finer than M5 (HistData is M1) to the EA's timeframe.
+    if len(df) > 1 and np.median(np.diff(df["time"].to_numpy()[:5000])) < 300:
+        df["time"] = df["time"] // 300 * 300
+        df = df.groupby("time", as_index=False).agg(
+            open=("open", "first"), high=("high", "max"), low=("low", "min"),
+            close=("close", "last"), spread=("spread", "max"))
+    return meta, df.reset_index(drop=True)
 
 
 def prepare(meta: Meta, df: pd.DataFrame, atr_period: int = 14) -> list[Day]:
@@ -437,14 +507,16 @@ def monte_carlo(tr: pd.DataFrame, years: float, n: int = 10000, seed: int = 11) 
 # --------------------------------------------------------------------------
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("csv")
+    ap.add_argument("csv", nargs="+", help="one or more history files")
     ap.add_argument("--from", dest="date_from", default=None)
     ap.add_argument("--to", dest="date_to", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--perm", type=int, default=2000)
+    ap.add_argument("--spread-points", type=float, default=25.0,
+                    help="spread to charge when the file has none (gold: 25pt = $0.25)")
     args = ap.parse_args(argv)
 
-    meta, df = load(args.csv)
+    meta, df = load(args.csv, args.spread_points)
     if args.date_from:
         df = df[df["time"] >= pd.Timestamp(args.date_from).timestamp()]
     if args.date_to:

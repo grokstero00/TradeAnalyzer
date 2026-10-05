@@ -13,6 +13,22 @@ attacking the result from eight directions.
 3. File → Open Data Folder → `MQL5/Files/XAUUSD_M5.csv`. Zip it (≈35 MB raw,
    ≈8 MB zipped).
 
+### Or: full history from a third-party feed
+
+Broker history often starts in the late 2010s. For older data:
+
+- **Dukascopy** (gold from the early 2000s), with Node.js installed:
+  `npx dukascopy-node -i xauusd -from 2004-01-01 -to 2026-10-01 -t m5 -f csv`
+  — writes into `./download/`. Timestamps are UTC.
+- **HistData.com** — XAUUSD, "Generic ASCII", 1-minute bars, one zip per year
+  from 2009. Timestamps are EST without daylight saving.
+
+Both are moved onto broker time (New York + 7h, i.e. GMT+2/+3) automatically
+and resampled to M5. Neither has a spread, so a flat one is charged
+(`--spread-points`, default 25 = $0.25); also run with 40 to see how much
+the result depends on it. Files from different sources must not be mixed in
+one run.
+
 ## 2. Run
 
 ```bash
