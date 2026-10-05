@@ -1,0 +1,50 @@
+; TradeAnalyzerORB — validated XAUUSD forward-test configuration
+; Measured: XAUUSD M5, 2025-05-27..2026-08-07, 249 trades, PF 1.28, max DD 5.73%
+; Load via the EA properties dialog -> Inputs tab -> Load
+; Attach to an XAUUSD M5 chart. Do not change anything during the forward test.
+
+InpMagic=20260806
+InpDryRun=false
+InpTradeComment=ORB
+
+; --- Opening range (hours are BROKER SERVER time; GMT+3 assumed) ---
+InpRangeStartHour=7
+InpRangeStartMin=0
+InpRangeMinutes=60
+InpTradeUntilHour=17
+InpBreakoutBuffer=20
+
+; --- Relative thresholds: ON (this is the measured configuration) ---
+InpUseRelativeThresholds=true
+InpBufferPctOfRange=1.5
+InpMaxSpreadPctOfRange=8.0
+
+; --- Range quality (vs daily ATR) ---
+InpMinRangeDailyAtr=0.08
+InpMaxRangeDailyAtr=0.5
+InpAtrPeriod=14
+InpDailyAtrPeriod=14
+
+; --- Risk ---
+InpRiskPercent=0.5
+InpRewardRisk=2.0
+InpMaxLot=5.0
+InpMaxLotPer10k=0.1
+InpDailyLossCapPct=3.0
+InpMaxTradesPerDay=1
+InpMaxOpenPos=1
+InpOnePerDirection=true
+
+; --- Trade management: BOTH OFF. Enabling either one turned the measured
+; --- result from PF 1.28 into PF 0.87 — winners were cut short while losers
+; --- still ran to the full stop.
+InpUseBreakEven=false
+InpBreakEvenAtR=1.0
+InpUseTrailing=false
+InpTrailRMult=1.5
+
+; --- Filters ---
+InpMaxSpreadPoints=60.0
+InpCloseAtSessionEnd=true
+InpSessionEndHour=20
+InpNoFriday=false
