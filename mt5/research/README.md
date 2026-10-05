@@ -79,3 +79,25 @@ Simulator assumptions: fills at the next bar's open after the breakout bar
 closes, as the EA does; if the stop and the target fall inside one bar, the
 stop is assumed to have come first (pessimistic); the recorded bar spread
 is used for entry and for short exits.
+
+## Strategy survey (`strategy_lab.py`)
+
+Twelve well-known strategy families (trend following, momentum, mean
+reversion, volatility breakout, calendar effects, session effects, gap fade,
+opening-range breakout at other sessions) — 162 configurations — under a
+protocol fixed before running: parameters chosen on 2010–2018 only; a
+candidate needs t ≥ 2 after costs, 6/9 profitable years, a profitable
+neighbourhood and a deflated Sharpe ≥ 0.90 charged for all 162 trials; only
+candidates touch the 2019–2026 hold-out, once.
+
+Calibration: no-edge synthetic data → 0 candidates; planted intraday trend →
+found and passes the hold-out. Calibration also caught a look-ahead bug: a
+daily-bar Williams breakout that skipped days touching both levels turned a
+random walk into Sharpe 6. It is now walked on M5 bars.
+
+**Result on XAUUSD 2010 – Mar 2026: no candidates.** Three near-misses
+(Williams breakout k=1 long, long on Fridays, weekend gap fade; dev t ≈ 2.0–2.3,
+deflated Sharpe 0.22–0.34) were checked on the hold-out as a secondary,
+Bonferroni-adjusted analysis (t ≥ 2.13): t +1.17, +0.99, −0.87 — all fail, and
+the two positive ones have no alpha over simply holding gold. Full output:
+`survey_xauusd_2010_2026.md`.
