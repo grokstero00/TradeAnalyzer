@@ -99,8 +99,34 @@ per day) were each chosen by looking at this same 14-month window, so the split
 test measures *stability*, not true out-of-sample performance. With 246 trades
 the confidence interval around a 37.8% win rate is several points wide.
 
-**The next step is a forward test on a demo account**, left untouched for a
-month or more. History always knows a little too much; a live demo does not.
+The original plan was a demo forward test. A long-history replay answered
+the question faster — see below.
+
+### Long-history verdict: no edge (2010–2023)
+
+The 14-month result was then replayed over HistData XAUUSD M1, 2010–2023,
+with `research/orb_lab.py`. The decision rules were fixed before the data
+was seen: the verdict is the M5 configuration above, over 2010 onward;
+earlier years and other settings are informational only.
+
+| Spread charged | Trades | PF | Expectancy |
+|---|---|---|---|
+| none (best possible case) | 2446 | 0.95 | −0.03 R |
+| $0.10 | 2254 | 0.89 | −0.08 R |
+
+Year-by-year PF at zero cost wanders between 0.69 and 1.19 with no
+pattern. All eight neighbouring settings lose; breakout direction does no
+better than a coin flip; walk-forward out-of-sample PF 0.88. 0 of 8
+robustness checks pass.
+
+The best of 384 grid settings over 2010–2018 (range 05:00 + 30 min, PF 1.08
+at zero cost) served as an accidental out-of-sample test: over 2019–2023 it
+returned PF 1.00. That is what selection from a large grid looks like.
+
+**Conclusion: the 2025–26 result reflects that period's market, not a
+lasting property of gold. Do not trade this EA with real money as is.**
+(Caveats: HistData is bid-only, so spread is a flat assumption, which is why
+the zero-cost line carries the verdict; March–July 2023 has ~30% fewer bars.)
 
 ---
 
