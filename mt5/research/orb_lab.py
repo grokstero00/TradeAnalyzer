@@ -22,7 +22,7 @@ Usage:
     python3 orb_lab.py HISTDATA_*.csv --spread-points 30
 
 Accepts ExportBars.mq5 output (broker time), dukascopy-node CSV (UTC) and
-HistData ASCII M1 (EST). External feeds are moved onto broker time and charged
+HistData ASCII M1 (New York time). External feeds are moved onto broker time and charged
 a flat spread. Zipped or gzipped files are read directly.
 """
 from __future__ import annotations
@@ -87,7 +87,7 @@ def _read_one(path: str) -> tuple[Meta | None, pd.DataFrame, str]:
     """Returns (meta, bars, clock). Three layouts are recognised:
       ExportBars.mq5   '#symbol=...' header, unix seconds in BROKER time
       dukascopy-node   'timestamp,open,...', unix MILLISECONDS in UTC
-      HistData ASCII   '20090315 170000;o;h;l;c;v', no header, EST (UTC-5, no DST)
+      HistData ASCII   '20090315 170000;o;h;l;c;v', no header, New York local time
     """
     first = _first_line(path)
     if first.startswith("#"):
@@ -108,9 +108,13 @@ def _read_one(path: str) -> tuple[Meta | None, pd.DataFrame, str]:
     if ";" in first and first[:8].isdigit():
         df = pd.read_csv(path, sep=";", header=None,
                          names=["dt", "open", "high", "low", "close", "vol"])
+        # HistData documents its clock as EST without DST, but its XAUUSD files
+        # open the week at Sun 18:00 and close at Fri 17:00 in summer AND
+        # winter, i.e. they follow New York local time. Treating them as fixed
+        # EST shifts every summer day by an hour (the range would start at 06:00).
         t = pd.to_datetime(df["dt"], format="%Y%m%d %H%M%S")
-        df["time"] = _epoch_seconds(t) + 5 * 3600  # EST -> UTC
-        return None, df[["time", "open", "high", "low", "close"]], "utc"
+        df["time"] = _epoch_seconds(t)
+        return None, df[["time", "open", "high", "low", "close"]], "ny"
 
     raise ValueError(f"{path}: unrecognised format (first line: {first[:60]!r})")
 
@@ -143,6 +147,9 @@ def load(paths: list[str] | str, spread_points: float = 25.0) -> tuple[Meta, pd.
     if clocks == {"utc"}:
         df["time"] = to_broker_time(df["time"])
         meta = Meta(symbol="XAUUSD (external)")
+    elif clocks == {"ny"}:
+        df["time"] = df["time"] + 7 * 3600     # New York local -> broker clock
+        meta = Meta(symbol="XAUUSD (HistData)")
     meta = meta or Meta()
 
     if "spread" not in df:

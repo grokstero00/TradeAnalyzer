@@ -21,7 +21,9 @@ Broker history often starts in the late 2010s. For older data:
   `npx dukascopy-node -i xauusd -from 2004-01-01 -to 2026-10-01 -t m5 -f csv`
   — writes into `./download/`. Timestamps are UTC.
 - **HistData.com** — XAUUSD, "Generic ASCII", 1-minute bars, one zip per year
-  from 2009. Timestamps are EST without daylight saving.
+  from 2009. HistData says its clock is EST without daylight saving, but the
+  XAUUSD files open the week at Sun 18:00 and close at Fri 17:00 all year, so
+  they are read as New York local time.
 
 Both are moved onto broker time (New York + 7h, i.e. GMT+2/+3) automatically
 and resampled to M5. Neither has a spread, so a flat one is charged
