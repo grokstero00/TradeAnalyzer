@@ -123,6 +123,14 @@ The best of 384 grid settings over 2010–2018 (range 05:00 + 30 min, PF 1.08
 at zero cost) served as an accidental out-of-sample test: over 2019–2023 it
 returned PF 1.00. That is what selection from a large grid looks like.
 
+Adding 2024 – March 2026 changes nothing: 2010–2026 at zero cost is PF 0.96
+over 2923 trades (2024: 1.09, 2025: 1.01, Q1 2026: 0.85). Over the months
+that overlap the MT5 tester run (2025-05-27 – 2026-03) the replay gives
+PF 1.10–1.16 at 0–40 points of spread and ~19 trades a month, against the
+tester's 1.11 for its first half and ~17 trades a month: the simulator
+reproduces the EA, so the long-history verdict is about the strategy, not
+the tool.
+
 **Conclusion: the 2025–26 result reflects that period's market, not a
 lasting property of gold. Do not trade this EA with real money as is.**
 (Caveats: HistData is bid-only, so spread is a flat assumption, which is why
