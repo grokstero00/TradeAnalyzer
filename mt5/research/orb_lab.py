@@ -128,9 +128,11 @@ def to_broker_time(utc_seconds: pd.Series) -> pd.Series:
     return _epoch_seconds(ny.dt.tz_localize(None)) + 7 * 3600
 
 
-def load(paths: list[str] | str, spread_points: float = 25.0) -> tuple[Meta, pd.DataFrame]:
+def load(paths: list[str] | str, spread_points: float = 25.0,
+         tf_minutes: int = 5) -> tuple[Meta, pd.DataFrame]:
     """Load one or more files (e.g. one HistData file per year), put them on
-    broker time, resample to M5, and fill in a spread where the source has none."""
+    broker time, resample to `tf_minutes` (the chart timeframe the EA would
+    run on), and fill in a spread where the source has none."""
     if isinstance(paths, str):
         paths = [paths]
     meta, frames, clocks = None, [], set()
@@ -158,9 +160,10 @@ def load(paths: list[str] | str, spread_points: float = 25.0) -> tuple[Meta, pd.
         meta.symbol += f", flat spread {spread_points:g}pt"
 
     df = df.sort_values("time").drop_duplicates("time")
-    # Resample anything finer than M5 (HistData is M1) to the EA's timeframe.
-    if len(df) > 1 and np.median(np.diff(df["time"].to_numpy()[:5000])) < 300:
-        df["time"] = df["time"] // 300 * 300
+    # Resample finer data (HistData is M1) to the chart timeframe.
+    tf = tf_minutes * 60
+    if len(df) > 1 and np.median(np.diff(df["time"].to_numpy()[:5000])) < tf:
+        df["time"] = df["time"] // tf * tf
         df = df.groupby("time", as_index=False).agg(
             open=("open", "first"), high=("high", "max"), low=("low", "min"),
             close=("close", "last"), spread=("spread", "max"))
@@ -312,12 +315,13 @@ def simulate_day(day: Day, cfg: Cfg, meta: Meta, force_dir: int = 0,
     if cfg.lot_per_10k > 0:
         risk_frac = min(risk_frac, cfg.lot_per_10k / 10000.0 * risk * meta.contract)
     return dict(day=day.day, t=int(day.t[ie]), dir=direction, r=r, risk_frac=risk_frac,
-                range=size, risk=risk, entry_idx=ie)
+                range=size, risk=risk, entry_idx=ie, entry=entry, sl=sl, tp=tp)
 
 
 def run(days: list[Day], cfg: Cfg, meta: Meta) -> pd.DataFrame:
     rows = [x for d in days if (x := simulate_day(d, cfg, meta)) is not None]
-    return pd.DataFrame(rows, columns=["day", "t", "dir", "r", "risk_frac", "range", "risk", "entry_idx"])
+    return pd.DataFrame(rows, columns=["day", "t", "dir", "r", "risk_frac", "range", "risk", "entry_idx",
+                                       "entry", "sl", "tp"])
 
 
 # --------------------------------------------------------------------------
@@ -519,11 +523,12 @@ def main(argv=None) -> int:
     ap.add_argument("--to", dest="date_to", default=None)
     ap.add_argument("--out", default=None)
     ap.add_argument("--perm", type=int, default=2000)
+    ap.add_argument("--tf", type=int, default=5, help="chart timeframe in minutes (EA validated on 5)")
     ap.add_argument("--spread-points", type=float, default=25.0,
                     help="spread to charge when the file has none (gold: 25pt = $0.25)")
     args = ap.parse_args(argv)
 
-    meta, df = load(args.csv, args.spread_points)
+    meta, df = load(args.csv, args.spread_points, args.tf)
     if args.date_from:
         df = df[df["time"] >= pd.Timestamp(args.date_from).timestamp()]
     if args.date_to:

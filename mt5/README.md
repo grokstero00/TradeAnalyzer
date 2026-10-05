@@ -131,6 +131,12 @@ tester's 1.11 for its first half and ~17 trades a month: the simulator
 reproduces the EA, so the long-history verdict is about the strategy, not
 the tool.
 
+The same configuration on other chart timeframes, 2010–2026, zero cost:
+M1 0.97, M5 0.96, M15 0.96, M30 0.96, H1 0.97 — no timeframe has an edge.
+Re-resolving the M5 trades' exits on M1 bars changed 6 of 2923 outcomes, so
+the pessimistic "stop first inside one bar" assumption does not drive the
+result.
+
 **Conclusion: the 2025–26 result reflects that period's market, not a
 lasting property of gold. Do not trade this EA with real money as is.**
 (Caveats: HistData is bid-only, so spread is a flat assumption, which is why

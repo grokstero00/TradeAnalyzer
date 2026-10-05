@@ -38,7 +38,8 @@ pip install numpy pandas
 python3 orb_lab.py XAUUSD_M5.csv --out report.md
 ```
 
-About two minutes for ten years of M5.
+About two minutes for ten years of M5. `--tf 15` (or 1, 30, 60) replays the
+EA on another chart timeframe built from the same data.
 
 ## What it checks
 
