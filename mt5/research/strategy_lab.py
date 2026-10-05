@@ -59,6 +59,7 @@ class Market:
     hc: pd.DataFrame     # hourly CLOSE pivot
     orb_days: list       # orb_lab Day objects (M5) for the session-breakout family
     orb_meta: object
+    m5: pd.DataFrame | None = None   # raw M5 bars (broker seconds) for path-exact exits
 
 
 def load_market(files: list[str]) -> Market:
@@ -71,7 +72,8 @@ def load_market(files: list[str]) -> Market:
     d = d[d.index.dayofweek < 5]          # broker Mon-Fri
     ho = h.pivot(index="day", columns="hour", values="open").reindex(d.index)
     hc = h.pivot(index="day", columns="hour", values="close").reindex(d.index)
-    return Market(d=d, h=h, ho=ho, hc=hc, orb_days=prepare(meta, m5), orb_meta=meta)
+    return Market(d=d, h=h, ho=ho, hc=hc, orb_days=prepare(meta, m5), orb_meta=meta,
+                  m5=m5[["time", "open", "high", "low", "close"]].reset_index(drop=True))
 
 
 # --------------------------------------------------------------------------

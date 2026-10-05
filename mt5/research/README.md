@@ -101,3 +101,23 @@ deflated Sharpe 0.22–0.34) were checked on the hold-out as a secondary,
 Bonferroni-adjusted analysis (t ≥ 2.13): t +1.17, +0.99, −0.87 — all fail, and
 the two positive ones have no alpha over simply holding gold. Full output:
 `survey_xauusd_2010_2026.md`.
+
+## Chart-pattern survey (`pattern_lab.py`)
+
+Engulfing, pin bar, inside-bar breakout, support/resistance bounce and break,
+double top/bottom and triangle breakout, each on H1/H4/D1 with targets of
+1.5/2/3 R, both sides and long-only — 216 configurations. Same protocol; the
+deflated Sharpe is charged for 378 trials (these plus strategy_lab's 162).
+Signals at the pattern candle's close, fills and exits walked on M5, swing
+points used only once confirmed.
+
+Calibration: random walk → 0 candidates (best t 1.86). A planted intraday
+trend shows up as many profitable pattern configurations but none clears the
+bar — the protocol is strict and can miss a weak edge; it does not promote
+noise.
+
+**Result on XAUUSD 2010 – Mar 2026: no candidates.** The one strong near-miss,
+triangle breakout on H4 (dev t +2.56, every neighbour profitable, deflated
+Sharpe 0.33), was run once on the hold-out as a pre-declared secondary check:
+t −1.35, profitable in 1 of 8 years. Full output:
+`survey_patterns_xauusd_2010_2026.md`.
