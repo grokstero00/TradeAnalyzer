@@ -1,0 +1,182 @@
+CCNA.registerDay({
+  day: 10,
+  title: 'IPv4 Header',
+  titleRu: 'Заголовок IPv4',
+  topics: ['Version / IHL', 'DSCP / ECN', 'Total Length', 'Fragmentation fields', 'TTL', 'Protocol', 'Checksum'],
+  questions: [
+    {
+      id: 'd10-01',
+      type: 'single',
+      question: 'What is the minimum length of an IPv4 header?',
+      options: ['8 bytes', '20 bytes', '40 bytes', '60 bytes'],
+      answer: 1,
+      explanation: 'Минимальный заголовок IPv4 — 20 байт (без Options), максимальный — 60 байт. (40 байт — фиксированный заголовок IPv6.)',
+    },
+    {
+      id: 'd10-02',
+      type: 'single',
+      question: 'The IHL (Internet Header Length) field of an IPv4 packet has a value of 5. What does it mean?',
+      options: [
+        'The header is 5 bytes long.',
+        'The header is 20 bytes long, with no options.',
+        'The packet can pass through 5 routers.',
+        'The packet is fragment number 5.',
+      ],
+      answer: 1,
+      explanation: 'IHL (4 бита) указывает длину заголовка в 4-байтовых словах: 5 × 4 = 20 байт (минимум). Максимум 15 × 4 = 60 байт. Поле нужно, потому что Options имеют переменную длину.',
+    },
+    {
+      id: 'd10-03',
+      type: 'match',
+      question: 'Match each value of the IPv4 Protocol field to the protocol it identifies.',
+      items: ['1', '6', '17', '89'],
+      targets: ['ICMP', 'TCP', 'UDP', 'OSPF', 'ARP'],
+      answer: [0, 1, 2, 3],
+      explanation: 'Protocol (8 бит) указывает протокол инкапсулированных данных: 1 — ICMP, 6 — TCP, 17 — UDP, 89 — OSPF. ARP не передаётся внутри IP (у него свой Ethernet Type 0x0806).',
+    },
+    {
+      id: 'd10-04',
+      type: 'single',
+      question: 'What happens when a router receives an IPv4 packet and decrements its TTL to 0?',
+      options: [
+        'The router forwards the packet with TTL 0.',
+        'The router drops the packet.',
+        'The router resets the TTL to 64.',
+        'The router fragments the packet.',
+      ],
+      answer: 1,
+      explanation: 'TTL (Time To Live, 8 бит) защищает от бесконечных петель маршрутизации. Каждый роутер уменьшает TTL на 1; если TTL достиг 0, пакет отбрасывается. Рекомендуемое начальное значение — 64.',
+    },
+    {
+      id: 'd10-05',
+      type: 'single',
+      question: 'Which IPv4 header field is used for Quality of Service (QoS) to prioritize delay-sensitive traffic such as voice?',
+      options: ['ECN', 'DSCP', 'Identification', 'Fragment Offset'],
+      answer: 1,
+      explanation: 'DSCP (Differentiated Services Code Point, 6 бит) используется для QoS. ECN (Explicit Congestion Notification, 2 бита) — сообщает о перегрузке без отбрасывания пакетов (если обе стороны поддерживают).',
+    },
+    {
+      id: 'd10-06',
+      type: 'single',
+      question: 'What does the Total Length field of the IPv4 header indicate?',
+      options: [
+        'The length of the IPv4 header only',
+        'The total length of the packet: header plus encapsulated data',
+        'The length of the Ethernet frame',
+        'The number of fragments',
+      ],
+      answer: 1,
+      explanation: 'Total Length (16 бит) — длина всего пакета (заголовок + данные) в байтах. Минимум 20, максимум 65 535 байт.',
+    },
+    {
+      id: 'd10-07',
+      type: 'multi',
+      question: 'Which two statements about the IPv4 Flags field are true?',
+      options: [
+        'If the DF (Don\'t Fragment) bit is set, the packet must not be fragmented.',
+        'The MF (More Fragments) bit is set on all fragments except the last one.',
+        'The MF bit is set only on the last fragment.',
+        'The Flags field is 16 bits long.',
+        'The DF bit indicates the packet has errors.',
+      ],
+      answer: [0, 1],
+      explanation: 'Flags — 3 бита: Reserved (всегда 0), DF (Don\'t Fragment), MF (More Fragments). MF = 1 у всех фрагментов, кроме последнего; у последнего MF = 0. Нефрагментированный пакет имеет MF = 0.',
+    },
+    {
+      id: 'd10-08',
+      type: 'single',
+      question: 'In which units is the IPv4 Fragment Offset field expressed?',
+      options: ['Bits', 'Bytes', '4-byte words', '8-byte units'],
+      answer: 3,
+      explanation: 'Fragment Offset (13 бит) указывает позицию фрагмента в исходном пакете в единицах по 8 байт. Например, offset 185 = 1480 байт.',
+    },
+    {
+      id: 'd10-09',
+      type: 'single',
+      question: 'What is the purpose of the Identification field in the IPv4 header?',
+      options: [
+        'It identifies the source host.',
+        'It identifies which packet a fragment belongs to; all fragments of the same packet have the same value.',
+        'It identifies the application.',
+        'It identifies the VLAN.',
+      ],
+      answer: 1,
+      explanation: 'Identification (16 бит): у всех фрагментов одного исходного пакета одинаковое значение — по нему получатель собирает пакет обратно.',
+    },
+    {
+      id: 'd10-10',
+      type: 'single',
+      question: 'What does a router do when the IPv4 Header Checksum it calculates does not match the value in the packet?',
+      options: [
+        'It requests retransmission from the sender.',
+        'It drops the packet.',
+        'It corrects the error and forwards the packet.',
+        'It forwards the packet and logs a warning.',
+      ],
+      answer: 1,
+      explanation: 'Header Checksum (16 бит) проверяет ошибки только в заголовке IPv4 (не в данных). Если вычисленная сумма не совпадает — пакет отбрасывается. Повторную передачу IP не выполняет.',
+    },
+    {
+      id: 'd10-11',
+      type: 'single',
+      question: 'What is the value of the Version field in an IPv4 header, and how long is the field?',
+      options: ['4, a 4-bit field', '4, an 8-bit field', '6, a 4-bit field', '0100, a 16-bit field'],
+      answer: 0,
+      explanation: 'Version — первые 4 бита заголовка: для IPv4 значение 4 (0100), для IPv6 — 6 (0110).',
+    },
+    {
+      id: 'd10-12',
+      type: 'single',
+      question: 'Why can packets need to be fragmented when sent over Ethernet?',
+      options: [
+        'Because the Ethernet MTU is 1500 bytes, smaller than the maximum IPv4 packet size',
+        'Because Ethernet cannot carry IPv4 packets with options',
+        'Because routers always fragment packets',
+        'Because the TTL expires',
+      ],
+      answer: 0,
+      explanation: 'Максимальный размер IPv4-пакета — 65 535 байт, а MTU Ethernet (максимальный размер данных в кадре) — 1500 байт. Более крупные пакеты приходится фрагментировать.',
+    },
+    {
+      id: 'd10-13',
+      type: 'single',
+      question: 'Which field is variable in length, which is why the IHL field is necessary?',
+      options: ['Options', 'Total Length', 'DSCP', 'Destination Address'],
+      answer: 0,
+      explanation: 'Options — последнее поле заголовка, длиной 0–320 бит (0–40 байт). Из-за него длина заголовка переменная, и её указывает IHL.',
+    },
+    {
+      id: 'd10-14',
+      type: 'order',
+      question: 'Put these IPv4 header fields in the order in which they appear in the header.',
+      items: ['Version', 'IHL', 'DSCP', 'Total Length', 'Identification', 'TTL', 'Protocol', 'Source Address', 'Destination Address'],
+      explanation: 'Version → IHL → DSCP → ECN → Total Length → Identification → Flags → Fragment Offset → TTL → Protocol → Header Checksum → Source → Destination → Options. В IPv4 Source идёт раньше Destination.',
+    },
+  ],
+  generators: [
+    {
+      id: 'ihl',
+      title: 'IHL ↔ header length',
+      make(R) {
+        const ihl = R.int(5, 15);
+        const bytes = ihl * 4;
+        if (R.int(0, 1) === 0) {
+          return {
+            id: `gen-d10-ihl2len-${ihl}`,
+            type: 'fill',
+            question: `The IHL field of an IPv4 packet is ${ihl}. How long is the IPv4 header in bytes? (number)`,
+            answer: [String(bytes)],
+            explanation: `IHL считается в 4-байтовых словах: ${ihl} × 4 = ${bytes} байт.${ihl > 5 ? ` Из них ${bytes - 20} байт — Options.` : ''}`,
+          };
+        }
+        return {
+          id: `gen-d10-len2ihl-${ihl}`,
+          type: 'fill',
+          question: `An IPv4 header is ${bytes} bytes long. What is the value of the IHL field? (number)`,
+          answer: [String(ihl)],
+          explanation: `IHL = длина заголовка / 4 = ${bytes} / 4 = ${ihl}.`,
+        };
+      },
+    },
+  ],
+});
