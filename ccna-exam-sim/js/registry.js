@@ -46,6 +46,19 @@
     return null;
   }
 
+  function validateLab(lab) {
+    if (!lab || typeof lab !== 'object') return 'лаба не является объектом';
+    if (typeof lab.id !== 'string' || !lab.id) return 'нет поля id';
+    if (typeof lab.title !== 'string') return 'нет поля title';
+    if (!Array.isArray(lab.devices) || !lab.devices.length) return 'нужен список devices';
+    if (!(lab.tasks || []).length && !(lab.questions || []).length) return 'нужны tasks или questions';
+    const names = new Set(lab.devices.map((d) => d.name));
+    for (const l of lab.links || []) {
+      if (!names.has(l[0]) || !names.has(l[2])) return `связь ${l.join(' ')} ссылается на неизвестное устройство`;
+    }
+    return null;
+  }
+
   const rng = {
     int(min, max) {
       return min + Math.floor(Math.random() * (max - min + 1));
@@ -97,6 +110,44 @@
       for (let w = 128; w >= 1; w /= 2) if (n & w) parts.push(w);
       return parts.join(' + ');
     },
+    hosts(prefix) {
+      return prefix >= 31 ? 2 ** (32 - prefix) : 2 ** (32 - prefix) - 2;
+    },
+    /* Smallest prefix whose subnet fits `hosts` usable addresses. */
+    prefixFor(hosts) {
+      let p = 30;
+      while (p > 0 && 2 ** (32 - p) - 2 < hosts) p--;
+      return p;
+    },
+    /* Random subnetting task (network / broadcast / first / last / hosts) for one of `prefixes`. */
+    subnetTask(R, prefixes, tag) {
+      const p = R.pick(prefixes);
+      const ip = ipv4.random(R, p >= 24 ? 24 : p >= 16 ? 16 : 8);
+      const netN = ipv4.network(ip, p);
+      const bcN = ipv4.broadcast(ip, p);
+      const net = ipv4.toStr(netN);
+      const bc = ipv4.toStr(bcN);
+      const mask = ipv4.maskStr(p);
+      const why = `Маска /${p} = ${mask}. Сеть ${net}, broadcast ${bc}, хосты ${ipv4.toStr(netN + 1)} – ${ipv4.toStr(bcN - 1)}.`;
+      const kind = R.pick(['network', 'broadcast', 'first', 'last', 'hosts']);
+      const base = { id: `gen-${tag}-${kind}-${ip}-${p}`, type: 'fill' };
+      switch (kind) {
+        case 'network':
+          return Object.assign(base, { question: `Host ${ip}/${p}. What is the network (subnet) address?`, answer: [net], explanation: why });
+        case 'broadcast':
+          return Object.assign(base, { question: `Host ${ip}/${p}. What is the broadcast address of its subnet?`, answer: [bc], explanation: why });
+        case 'first':
+          return Object.assign(base, { question: `Host ${ip}/${p}. What is the first usable host address of its subnet?`, answer: [ipv4.toStr(netN + 1)], explanation: why });
+        case 'last':
+          return Object.assign(base, { question: `Host ${ip}/${p}. What is the last usable host address of its subnet?`, answer: [ipv4.toStr(bcN - 1)], explanation: why });
+        default:
+          return Object.assign(base, {
+            question: `How many usable host addresses are in a /${p} subnet (mask ${mask})? (number)`,
+            answer: [String(ipv4.hosts(p))],
+            explanation: `Бит хоста: 32 − ${p} = ${32 - p}. 2^${32 - p} − 2 = ${ipv4.hosts(p)}.`,
+          });
+      }
+    },
     random(R, prefix) {
       const first = prefix === 8 ? R.int(1, 126) : prefix === 16 ? R.int(128, 191) : R.int(192, 223);
       return `${first}.${R.int(0, 255)}.${R.int(0, 255)}.${R.int(1, 254)}`;
@@ -105,6 +156,7 @@
 
   window.CCNA = {
     days: {},
+    labs: {},
     manifest: [],
     errors: [],
     rng,
@@ -132,6 +184,16 @@
         seen.add(q.id);
         valid.push(q);
       }
+      const labs = [];
+      for (const lab of def.labs || []) {
+        const problem = validateLab(lab) || (this.labs[lab.id] && this.labs[lab.id].day !== def.day ? 'повторяющийся id лабы' : null);
+        if (problem) {
+          this.errors.push(`День ${def.day}, лаба ${lab && lab.id ? lab.id : '?'}: ${problem}`);
+          continue;
+        }
+        labs.push(lab);
+        this.labs[lab.id] = { lab, day: def.day };
+      }
       this.days[def.day] = {
         day: def.day,
         title: def.title || `Day ${def.day}`,
@@ -139,6 +201,7 @@
         topics: def.topics || [],
         questions: valid,
         generators: Array.isArray(def.generators) ? def.generators : [],
+        labs,
         custom: !!(meta && meta.custom),
       };
       return true;

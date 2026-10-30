@@ -148,4 +148,31 @@ CCNA.registerDay({
       explanation: '«T» означает twisted pair (витая пара). «BASE» — baseband signaling, «1000» — скорость 1000 Мбит/с.',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d02-media',
+      kind: 'simlet',
+      title: 'Identify interface types',
+      minutes: 6,
+      scenario: 'Вы подключены к коммутатору SW1 в privileged EXEC. Используйте `show interfaces status` (таблица портов: статус, скорость, тип) и при желании `show interfaces g0/1`, чтобы ответить на вопросы. Ничего настраивать не нужно.',
+      topology: 'PC-A ─ Fa0/1 ┐\nPC-B ─ Fa0/2 ┤\nPC-C ─ Fa0/5 ┼ SW1 ─ Gi0/1 ═══ fiber ═══ R1\n             └──── Gi0/2 ═══ fiber ═══ SW2',
+      devices: [
+        { name: 'SW1', kind: 'switch', ifaces: ['f0/1-8', 'g0/1-2'], start: 'P', ifaceOpts: { 'g0/1': { media: '1000BaseLX SFP' }, 'g0/2': { media: '1000BaseSX SFP' } } },
+        { name: 'R1', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'no shutdown'] },
+        { name: 'SW2', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'PCA', kind: 'pc', ip: '192.168.1.11' },
+        { name: 'PCB', kind: 'pc', ip: '192.168.1.12' },
+        { name: 'PCC', kind: 'pc', ip: '192.168.1.13' },
+      ],
+      links: [['SW1', 'g0/1', 'R1', 'g0/0'], ['SW1', 'g0/2', 'SW2', 'g0/1'], ['SW1', 'f0/1', 'PCA', 'nic'], ['SW1', 'f0/2', 'PCB', 'nic'], ['SW1', 'f0/5', 'PCC', 'nic']],
+      questions: [
+        { text: 'Сколько интерфейсов SW1 сейчас в состоянии **connected**?', answer: ['5'] },
+        { text: 'Какой интерфейс подключён трансивером для **многомодового** волокна (стандарт SX)? Например: Gi0/1', answer: ['Gi0/2'] },
+        { text: 'Какой интерфейс может работать по **single-mode** волокну на расстояние до 5 км?', answer: ['Gi0/1'] },
+        { text: 'Какая максимальная скорость (Мбит/с) у портов FastEthernet этого коммутатора?', answer: ['100'] },
+      ],
+      solution: { SW1: ['show interfaces status'] },
+      solutionNote: 'Тип порта виден в последней колонке: 1000BaseSX — multimode (до 550 м), 1000BaseLX — single-mode до 5 км (или multimode до 550 м). 10/100BaseTX — медный FastEthernet до 100 Мбит/с.',
+    },
+  ],
 });

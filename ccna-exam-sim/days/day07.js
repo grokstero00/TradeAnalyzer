@@ -171,5 +171,31 @@ CCNA.registerDay({
       },
     },
   ],
+  labs: [
+    {
+      id: 'lab-d07-classes',
+      kind: 'simlet',
+      title: 'Analyze IPv4 addresses on R1',
+      minutes: 8,
+      scenario: 'На R1 уже настроены адреса. Используйте `show ip interface brief` и `show running-config`, чтобы ответить на вопросы.',
+      topology: '        LAN-1        LAN-2        LAN-3\n         │G0/0       │G0/1       │G0/2\n         └─────────── R1 ──────────┘',
+      devices: [
+        { name: 'R1', kind: 'router', ifaces: ['g0/0-2'], start: 'P', setup: ['interface g0/0', 'ip address 10.10.10.1 255.0.0.0', 'no shutdown', 'interface g0/1', 'ip address 172.31.5.1 255.255.0.0', 'no shutdown', 'interface g0/2', 'ip address 192.168.77.1 255.255.255.0', 'no shutdown'] },
+        { name: 'SWA', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'SWB', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'SWC', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+      ],
+      links: [['R1', 'g0/0', 'SWA', 'g0/1'], ['R1', 'g0/1', 'SWB', 'g0/1'], ['R1', 'g0/2', 'SWC', 'g0/1']],
+      questions: [
+        { text: 'К какому классу относится адрес на G0/1? (A, B, C, D или E)', answer: ['B', 'class B'] },
+        { text: 'Какая длина префикса соответствует маске на G0/0? (например /24)', answer: ['/8', '8'] },
+        { text: 'Какой сетевой адрес у сети, подключённой к G0/2?', answer: ['192.168.77.0'] },
+        { text: 'Какой broadcast-адрес у сети на G0/1?', answer: ['172.31.255.255'] },
+        { text: 'Переведите первый октет адреса G0/0 в двоичный вид (8 бит).', answer: ['00001010'] },
+      ],
+      solution: { R1: ['show ip interface brief', 'show running-config'] },
+      solutionNote: 'G0/0 10.10.10.1 255.0.0.0 → класс A, /8. G0/1 172.31.5.1 /16 → класс B, broadcast 172.31.255.255. G0/2 192.168.77.1 /24 → сеть 192.168.77.0. 10 = 00001010.',
+    },
+  ],
 });
 

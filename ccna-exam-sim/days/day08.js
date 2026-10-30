@@ -204,4 +204,33 @@ CCNA.registerDay({
       },
     },
   ],
+  labs: [
+    {
+      id: 'lab-d08-ipconfig',
+      kind: 'sim',
+      title: 'Configure IP addresses on R1',
+      minutes: 10,
+      scenario: 'Настройте интерфейсы R1, подключённые к трём LAN, и включите их. Последний usable адрес каждой сети отдан роутеру.',
+      topology: '   SW1                 SW2                  SW3\n    │G0/0              │G0/1               │G0/2\n    └───────────────── R1 ──────────────────┘\n192.168.1.0/24    172.16.0.0/16      10.0.0.0/8',
+      devices: [
+        { name: 'R1', kind: 'router', hostname: 'R1', ifaces: ['g0/0-2'], start: 'U' },
+        { name: 'SW1', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'SW2', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'SW3', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+      ],
+      links: [['R1', 'g0/0', 'SW1', 'g0/1'], ['R1', 'g0/1', 'SW2', 'g0/1'], ['R1', 'g0/2', 'SW3', 'g0/1']],
+      tasks: [
+        { text: 'G0/0: последний usable адрес сети 192.168.1.0/24, интерфейс включён.', check: (H) => H.ip('R1', 'g0/0') === '192.168.1.254/24' && H.up('R1', 'g0/0') },
+        { text: 'G0/1: последний usable адрес сети 172.16.0.0/16, интерфейс включён.', check: (H) => H.ip('R1', 'g0/1') === '172.16.255.254/16' && H.up('R1', 'g0/1') },
+        { text: 'G0/2: последний usable адрес сети 10.0.0.0/8, интерфейс включён.', check: (H) => H.ip('R1', 'g0/2') === '10.255.255.254/8' && H.up('R1', 'g0/2') },
+        { text: 'Добавьте на G0/0 описание `## to SW1 ##`.', check: (H) => /SW1/i.test(H.ifc('R1', 'g0/0').desc) },
+        { text: 'Сохраните конфигурацию.', check: (H) => H.saved('R1') },
+      ],
+      questions: [
+        { text: 'Сколько usable адресов хостов в сети на G0/1?', answer: ['65534', '65,534'] },
+      ],
+      solution: { R1: ['enable', 'configure terminal', 'interface g0/0', 'ip address 192.168.1.254 255.255.255.0', 'description ## to SW1 ##', 'no shutdown', 'interface g0/1', 'ip address 172.16.255.254 255.255.0.0', 'no shutdown', 'interface g0/2', 'ip address 10.255.255.254 255.0.0.0', 'no shutdown', 'end', 'write memory', 'show ip interface brief'] },
+      explanation: 'Интерфейсы роутера по умолчанию выключены (administratively down), поэтому без `no shutdown` они не заработают.',
+    },
+  ],
 });

@@ -159,4 +159,40 @@ CCNA.registerDay({
       explanation: 'В Ethernet-заголовке сначала Destination MAC, потом Source MAC. (В IPv4-заголовке, наоборот, сначала Source IP, затем Destination IP.)',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d05-mactable',
+      kind: 'simlet',
+      title: 'Read the MAC address table',
+      minutes: 6,
+      scenario: 'Изучите таблицу MAC-адресов SW1 (`show mac address-table`) и состояние портов (`show interfaces status`), затем ответьте на вопросы. MAC можно вводить в любом формате.',
+      topology: 'PC1 ─ Fa0/1 ┐\nPC2 ─ Fa0/2 ┼ SW1 ─ Gi0/1 ─── SW2 ─┬─ PC3\n            │                     └─ PC4\n            └─ Gi0/2 ─── R1',
+      devices: [
+        {
+          name: 'SW1', kind: 'switch', ifaces: ['f0/1-8', 'g0/1-2'], start: 'P',
+          macTable: [
+            { mac: '0c2f.b06a.3900', port: 'f0/1' },
+            { mac: '0c2f.b0c4.5b00', port: 'f0/2' },
+            { mac: '0c2f.b0aa.1101', port: 'g0/1' },
+            { mac: '0c2f.b0aa.1102', port: 'g0/1' },
+            { mac: '0c2f.b011.9d00', port: 'g0/2' },
+          ],
+        },
+        { name: 'SW2', kind: 'switch', ifaces: ['g0/1'], hidden: true },
+        { name: 'R1', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'no shutdown'] },
+        { name: 'PC1', kind: 'pc', ip: '192.168.1.11' },
+        { name: 'PC2', kind: 'pc', ip: '192.168.1.12' },
+      ],
+      links: [['SW1', 'f0/1', 'PC1', 'nic'], ['SW1', 'f0/2', 'PC2', 'nic'], ['SW1', 'g0/1', 'SW2', 'g0/1'], ['SW1', 'g0/2', 'R1', 'g0/0']],
+      questions: [
+        { text: 'Через какой интерфейс SW1 отправит кадр для MAC **0c2f.b0c4.5b00**?', answer: ['Fa0/2'] },
+        { text: 'Сколько MAC-адресов SW1 изучил на интерфейсе Gi0/1?', answer: ['2'] },
+        { text: 'Почему на Gi0/1 несколько MAC-адресов? Ответьте одним словом: за этим портом находится другой ...', answer: ['коммутатор', 'switch', 'свитч'] },
+        { text: 'SW1 получает на Fa0/1 кадр с destination MAC **0c2f.b0ff.0001** (его нет в таблице). Через сколько интерфейсов SW1 разошлёт этот кадр?', answer: ['3'] },
+        { text: 'Какой OUI у MAC-адреса 0c2f.b06a.3900? (первые 6 hex-символов)', answer: ['0c2fb0', '0c2f.b0', '0c:2f:b0', '0c-2f-b0'] },
+      ],
+      solution: { SW1: ['show mac address-table', 'show interfaces status'] },
+      solutionNote: 'Unknown unicast рассылается через все порты в состоянии connected, кроме входящего: Fa0/2, Gi0/1, Gi0/2 — 3 интерфейса.',
+    },
+  ],
 });

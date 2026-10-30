@@ -155,4 +155,28 @@ CCNA.registerDay({
       explanation: 'В Cisco IOS команда отменяется добавлением `no` в начало: `no enable password`.',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d04-basic',
+      kind: 'sim',
+      title: 'Basic router setup and passwords',
+      minutes: 8,
+      scenario: 'Новый роутер подключён по консоли. Выполните базовую настройку: имя, пароли для privileged EXEC, шифрование паролей и сохранение конфигурации.',
+      topology: 'PC (PuTTY, 9600 8N1) ── rollover cable ── Console port: Router',
+      devices: [{ name: 'R1', kind: 'router', hostname: 'Router', ifaces: ['g0/0-2'], start: 'U' }],
+      tasks: [
+        { text: 'Задайте имя устройства **R1**.', check: (H) => H.dev('R1').hostname === 'R1' },
+        { text: 'Настройте `enable secret` с паролем **Cisco123**.', check: (H) => H.dev('R1').secret === 'Cisco123' },
+        { text: 'Настройте `enable password` с паролем **ccna**.', check: (H) => H.dev('R1').password === 'ccna' },
+        { text: 'Включите шифрование паролей в конфигурации (type 7).', check: (H) => H.dev('R1').spe && !!H.dev('R1').password7 },
+        { text: 'Сохраните конфигурацию в startup-config.', check: (H) => H.saved('R1') },
+      ],
+      questions: [
+        { text: 'Какой пароль теперь нужно ввести после команды `enable`?', answer: ['Cisco123'] },
+        { text: 'Каким типом (число) зашифрован enable password в `show running-config`?', answer: ['7'] },
+      ],
+      solution: { R1: ['enable', 'configure terminal', 'hostname R1', 'enable secret Cisco123', 'enable password ccna', 'service password-encryption', 'end', 'write memory', 'show running-config'] },
+      explanation: 'Если настроены оба пароля, действует enable secret. Проверить можно так: `disable`, затем `enable` и пароль.',
+    },
+  ],
 });

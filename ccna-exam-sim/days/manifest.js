@@ -16,4 +16,10 @@ CCNA.manifest = [
   'day10.js', // IPv4 Header
   'day11.js', // Routing Fundamentals
   'day12.js', // Static Routing
+  'day13.js', // Life of a Packet
+  'day14.js', // Subnetting (Part 1)
+  'day15.js', // Subnetting (Part 2)
+  'day16.js', // Subnetting (Part 3 - VLSM)
+  'day17.js', // VLANs (Part 1)
+  'day18.js', // VLANs (Part 2)
 ];

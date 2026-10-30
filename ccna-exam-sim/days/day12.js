@@ -154,4 +154,39 @@ CCNA.registerDay({
       explanation: 'Поле Default Gateway пустое: хост может общаться только внутри своей сети. Для пакетов в другие сети ему нужен шлюз по умолчанию (обычно IP интерфейса роутера в этой LAN, например 192.168.1.1).',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d12-static',
+      kind: 'sim',
+      title: 'Static and default routes',
+      minutes: 15,
+      scenario: 'IP-адреса на всех роутерах уже настроены. Настройте маршрутизацию так, чтобы PC1 и PC3 могли обмениваться трафиком. На R3 вместо конкретного маршрута используйте **маршрут по умолчанию**.',
+      topology: 'PC1 ─── G0/1 R1 G0/0 ─── G0/0 R2 G0/1 ─── G0/0 R3 G0/1 ─── PC3\n.10      .1      .1          .2    .2          .3    .1      .10\n192.168.1.0/24  192.168.12.0/24  192.168.23.0/24  192.168.3.0/24',
+      devices: [
+        { name: 'R1', kind: 'router', ifaces: ['g0/0-1'], start: 'U', setup: ['interface g0/0', 'ip address 192.168.12.1 255.255.255.0', 'no shutdown', 'interface g0/1', 'ip address 192.168.1.1 255.255.255.0', 'no shutdown'] },
+        { name: 'R2', kind: 'router', ifaces: ['g0/0-1'], start: 'U', setup: ['interface g0/0', 'ip address 192.168.12.2 255.255.255.0', 'no shutdown', 'interface g0/1', 'ip address 192.168.23.2 255.255.255.0', 'no shutdown'] },
+        { name: 'R3', kind: 'router', ifaces: ['g0/0-1'], start: 'U', setup: ['interface g0/0', 'ip address 192.168.23.3 255.255.255.0', 'no shutdown', 'interface g0/1', 'ip address 192.168.3.1 255.255.255.0', 'no shutdown'] },
+        { name: 'PC1', kind: 'pc', ip: '192.168.1.10', gw: '192.168.1.1' },
+        { name: 'PC3', kind: 'pc', ip: '192.168.3.10', gw: '192.168.3.1' },
+      ],
+      links: [['PC1', 'nic', 'R1', 'g0/1'], ['R1', 'g0/0', 'R2', 'g0/0'], ['R2', 'g0/1', 'R3', 'g0/0'], ['R3', 'g0/1', 'PC3', 'nic']],
+      tasks: [
+        { text: 'R1: статический маршрут к **192.168.3.0/24** через R2.', check: (H) => { const r = H.route('R1', '192.168.3.0/24'); return !!r && (r.nh === '192.168.12.2' || r.out === 'GigabitEthernet0/0'); } },
+        { text: 'R2: статические маршруты к **192.168.1.0/24** и **192.168.3.0/24**.', check: (H) => !!H.route('R2', '192.168.1.0/24') && !!H.route('R2', '192.168.3.0/24') },
+        { text: 'R3: **маршрут по умолчанию** через R2 (192.168.23.2).', check: (H) => { const r = H.route('R3', '0.0.0.0/0'); return !!r && r.nh === '192.168.23.2'; } },
+        { text: 'PC1 успешно пингует PC3 (192.168.3.10).', check: (H) => H.ping('PC1', '192.168.3.10') },
+      ],
+      questions: [
+        { text: 'Что показывает строка «Gateway of last resort» на R3 после настройки? (IP-адрес)', answer: ['192.168.23.2'] },
+        { text: 'Каким кодом помечен маршрут по умолчанию в `show ip route`?', answer: ['S*'] },
+      ],
+      solution: {
+        R1: ['enable', 'configure terminal', 'ip route 192.168.3.0 255.255.255.0 192.168.12.2', 'end'],
+        R2: ['enable', 'configure terminal', 'ip route 192.168.1.0 255.255.255.0 192.168.12.1', 'ip route 192.168.3.0 255.255.255.0 192.168.23.3', 'end'],
+        R3: ['enable', 'configure terminal', 'ip route 0.0.0.0 0.0.0.0 192.168.23.2', 'end', 'show ip route'],
+        PC1: ['ping 192.168.3.10'],
+      },
+      explanation: 'Маршрутизация должна работать в обе стороны: без маршрута на R3 к 192.168.1.0/24 (здесь его заменяет default route) echo request дойдёт до PC3, а ответ — нет.',
+    },
+  ],
 });

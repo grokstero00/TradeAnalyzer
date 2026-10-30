@@ -27,10 +27,12 @@
         generated: true,
         source: 'all',
         passScore: 825,
+        labs: 2,
       },
       qstats: {},
       history: [],
       customDays: [],
+      labs: {},
       current: null,
     };
   }
@@ -212,6 +214,16 @@
       case 'fill':
         return q.answer[0];
     }
+    return null;
+  }
+
+  function labDef(q) {
+    const hit = CCNA.labs[q.labId || q.id];
+    return hit ? hit.lab : null;
+  }
+
+  function labQuestion(lab, day) {
+    return { id: lab.id, type: 'lab', labId: lab.id, question: lab.title, minutes: lab.minutes || 10, day };
   }
 
   function norm(s) {
@@ -226,6 +238,7 @@
       case 'match': return a.some((x) => x != null);
       case 'order': return true;
       case 'fill': return norm(a) !== '';
+      case 'lab': return !!a.touched;
     }
     return false;
   }
@@ -238,6 +251,10 @@
         return Array.isArray(a) && a.length === q.answer.length && q.answer.every((x) => a.includes(x));
       case 'match':
         return Array.isArray(a) && q.answer.every((t, i) => a[i] === t);
+      case 'lab': {
+        const def = labDef(q);
+        return !!def && !!a && CCNA.cli.checkLab(def, a).all;
+      }
       case 'order': {
         const cur = a || q.view;
         return cur.every((x, i) => x === i);
@@ -326,6 +343,8 @@
     }
     const questions = entries.map((e) => instantiate(e, s.shuffle));
     const n = questions.length;
+    const labMinutes = questions.reduce((acc, q) => acc + (q.type === 'lab' ? q.minutes || 10 : 0), 0);
+    const plainCount = questions.filter((q) => q.type !== 'lab').length;
     db.current = {
       id: Date.now(),
       title,
@@ -336,7 +355,7 @@
       marked: Array(n).fill(false),
       revealed: Array(n).fill(false),
       idx: 0,
-      timeLimit: s.mode === 'exam' ? Math.max(60, Math.round(n * s.minutesPerQ * 60)) : 0,
+      timeLimit: s.mode === 'exam' ? Math.max(60, Math.round((plainCount * s.minutesPerQ + labMinutes) * 60)) : 0,
       elapsed: 0,
     };
     save();
@@ -348,7 +367,36 @@
     const days = s.days.filter((d) => CCNA.days[d]);
     const pool = staticPool(days, s).concat(generatedPool(days, s));
     const count = Math.min(Math.max(1, s.count | 0), pool.length);
-    startExam(R.shuffle(pool).slice(0, count), `Дни ${daysLabel(days)}`);
+    const picked = R.shuffle(pool).slice(0, count);
+    const labs = R.shuffle(labPool(days, s)).slice(0, s.labs);
+    for (const l of labs) picked.splice(R.int(0, picked.length), 0, l);
+    startExam(picked, `Дни ${daysLabel(days)}`);
+  }
+
+  function labPool(dayNums, s) {
+    const out = [];
+    for (const n of dayNums) {
+      const d = CCNA.days[n];
+      if (!d) continue;
+      for (const lab of d.labs) {
+        const st = db.qstats[lab.id];
+        if (s.source === 'unseen' && st && st.seen) continue;
+        if (s.source === 'wrong' && !(st && st.lastWrong)) continue;
+        out.push({ q: labQuestion(lab, n), day: n });
+      }
+    }
+    return out;
+  }
+
+  /* Exam answers keep lab state; history drops the long terminal transcript. */
+  function compactLab(st) {
+    if (!st) return st;
+    const c = clone(st);
+    for (const t of Object.values(c.term)) {
+      t.lines = t.lines.slice(-40);
+      t.hist = [];
+    }
+    return c;
   }
 
   // ---------------------------------------------------------------- finishing
@@ -406,7 +454,7 @@
       timeLimit: ex.timeLimit,
       timeUp: !!timeUp,
       questions: ex.questions.map(packQuestion),
-      answers: ex.answers,
+      answers: ex.answers.map((a, i) => (ex.questions[i].type === 'lab' ? compactLab(a) : a)),
       marked: ex.marked,
       result,
     };
@@ -457,6 +505,7 @@
       results: viewResults,
       history: viewHistory,
       bank: viewBank,
+      labs: viewLabs,
     };
     if ((view === 'exam' || view === 'review') && !db.current) view = 'home';
     const content = (page[view] || viewHome)();
@@ -481,7 +530,7 @@
       el('div', { class: 'brand' }, el('b', null, 'CCNA Exam Simulator'), el('span', null, sub)),
       inExam
         ? el('nav', { class: 'nav' }, el('button', { onclick: () => go('home') }, 'Пауза и выход'))
-        : el('nav', { class: 'nav' }, navBtn('home', 'Экзамен'), navBtn('history', 'История'), navBtn('bank', 'Банк вопросов')),
+        : el('nav', { class: 'nav' }, navBtn('home', 'Экзамен'), navBtn('labs', 'Практика'), navBtn('history', 'История'), navBtn('bank', 'Банк вопросов')),
     ));
   }
 
@@ -494,7 +543,10 @@
     const dayNums = [...selected];
     const poolSize = staticPool(dayNums, s).length + generatedCount(dayNums, s);
     const count = Math.min(Math.max(1, s.count | 0), poolSize);
-    const minutes = Math.round(count * s.minutesPerQ);
+    const labsAvail = labPool(dayNums, s);
+    const labCount = Math.min(s.labs, labsAvail.length);
+    const labMinutes = labsAvail.slice(0, labCount).reduce((acc, l) => acc + l.q.minutes, 0);
+    const minutes = Math.round(count * s.minutesPerQ + labMinutes);
 
     const out = [];
 
@@ -552,6 +604,7 @@
           el('span', null, d.titleRu || d.topics.join(', '))),
         el('span', { class: 'day-meta' },
           `${total} вопр.${d.generators.length ? ' + ген.' : ''}`,
+          d.labs.length ? el('div', null, `${d.labs.length} ${plural(d.labs.length, 'лаба', 'лабы', 'лаб')} · ${d.labs.filter((l) => db.labs[l.id] && db.labs[l.id].solved).length} решено`) : null,
           el('div', { class: 'mastery', title: `Освоено ${learned} из ${total}` }, el('i', { style: `width:${pct}%` })),
         ),
       );
@@ -630,6 +683,10 @@
         timeInput,
         el('span', { class: 'small muted' }, 'На реальном CCNA 200-301: около 100 вопросов за 120 минут, то есть ~1.2 минуты на вопрос.'),
       ) : null,
+      el('div', { class: 'field' },
+        el('span', { class: 'label' }, `Лабораторные работы в экзамене (доступно ${labsAvail.length})`),
+        el('div', { class: 'seg' }, [0, 1, 2, 3, 5].map((n) => el('button', { 'aria-pressed': String(s.labs === n), onclick: () => set('labs', n) }, String(n)))),
+        el('span', { class: 'small muted' }, 'Настройка устройств в эмуляторе CLI, как симуляции в реальном экзамене. На каждую лабу добавляется отдельное время.')),
       el('div', { class: 'field' }, el('label', { for: 'source' }, 'Какие вопросы брать'), sourceSel),
       el('label', { class: 'check', for: 'gen' },
         el('input', { type: 'checkbox', id: 'gen', checked: s.generated, onchange: (e) => set('generated', e.target.checked) }),
@@ -642,7 +699,7 @@
         passInput),
       el('div', { class: 'summary-line' },
         poolSize
-          ? `${count} ${plural(count, 'вопрос', 'вопроса', 'вопросов')} · ${s.mode === 'exam' ? `${minutes} мин` : 'без лимита'} · проходной ${s.passScore}/1000`
+          ? `${count} ${plural(count, 'вопрос', 'вопроса', 'вопросов')}${labCount ? ` + ${labCount} ${plural(labCount, 'лаба', 'лабы', 'лаб')}` : ''} · ${s.mode === 'exam' ? `${minutes} мин` : 'без лимита'} · проходной ${s.passScore}/1000`
           : 'Выберите хотя бы один день с вопросами'),
       el('button', { class: 'btn primary big', disabled: !poolSize, onclick: startFromSettings }, 'Начать экзамен'),
     );
@@ -656,7 +713,7 @@
     const h = db.history;
     const last = h.slice(0, 5);
     const ids = Object.keys(db.qstats);
-    const seen = ids.length;
+    const seen = ids.filter((id) => index.has(id)).length;
     const totalQ = index.size;
     return el('section', { class: 'panel stack' },
       el('h3', null, 'Прогресс'),
@@ -815,6 +872,7 @@
 
   function questionText(q) {
     let text = q.question;
+    if (q.type === 'lab') return `Lab: ${text}`;
     if (q.type === 'multi' && !/choose/i.test(text)) text += ` (Choose ${CHOOSE[q.answer.length] || q.answer.length}.)`;
     return text;
   }
@@ -826,6 +884,7 @@
       case 'match': return 'Сопоставьте каждый элемент слева с вариантом справа.';
       case 'order': return 'Расставьте элементы в правильном порядке кнопками ↑ ↓.';
       case 'fill': return 'Введите ответ. Регистр и лишние пробелы не учитываются.';
+      case 'lab': return 'Практическое задание: выполните настройку в CLI и ответьте на вопросы. Оценивается итоговое состояние устройств.';
     }
     return '';
   }
@@ -837,6 +896,24 @@
    */
   function renderQuestion(q, ans, opts) {
     const o = opts || {};
+    if (q.type === 'lab') {
+      const def = labDef(q);
+      if (!def) return el('div', { class: 'muted' }, 'Эта лабораторная работа удалена из банка.');
+      let st = ans;
+      if (!st) {
+        st = CCNA.cli.createLab(def);
+        if (o.onChange && !o.locked) o.onChange(st, false);
+      }
+      return el('div', { class: 'question' },
+        el('div', { class: 'q-text' }, el('b', null, questionText(q)),
+          el('span', { class: 'small muted' }, ` · ${def.kind === 'simlet' ? 'Simlet' : 'Sim'} · ~${def.minutes || 10} мин`)),
+        o.locked ? null : el('div', { class: 'q-hint' }, hintFor(q)),
+        renderLab(def, st, {
+          locked: o.locked,
+          check: o.reveal ? CCNA.cli.checkLab(def, st) : null,
+          onChange: () => o.onChange && o.onChange(st, false),
+        }));
+    }
     const wrap = el('div', { class: 'question' + (o.locked ? ' locked' : '') });
     if (q.exhibit) {
       wrap.append(el('div', null, el('div', { class: 'exhibit-label' }, 'Exhibit'), el('pre', { class: 'exhibit' }, q.exhibit)));
@@ -951,6 +1028,16 @@
     const answered = isAnswered(q, ans);
     const box = el('div', { class: 'explain ' + (o.neutral ? '' : ok ? 'ok' : 'bad') });
     if (!o.neutral) box.append(el('div', { class: 'verdict' }, ok ? 'Верно' : answered ? 'Неверно' : 'Нет ответа'));
+    if (q.type === 'lab') {
+      const def = labDef(q);
+      if (def) {
+        if (!ok) box.append(el('div', { class: 'small' }, 'Лабораторная засчитывается, только если выполнены все задачи и даны верные ответы на все вопросы.'));
+        if (def.explanation) box.append(el('div', { html: fmt(def.explanation), style: 'margin-top:6px' }));
+        box.append(solutionEl(def, true));
+      }
+      box.append(el('div', { class: 'small muted', style: 'margin-top:8px' }, `Day ${q.day} · ${q.id}`));
+      return box;
+    }
     if (q.type === 'fill') {
       box.append(el('div', { class: 'small' }, 'Правильный ответ: ', el('code', null, q.answer[0]),
         q.answer.length > 1 ? el('span', { class: 'muted' }, ` · также принимается: ${q.answer.slice(1).join(' | ')}`) : null));
@@ -962,6 +1049,210 @@
     box.append(el('div', { class: 'small muted', style: 'margin-top:8px' },
       `Day ${q.day}` + (CCNA.days[q.day] ? ` · ${CCNA.days[q.day].title}` : '') + ` · ${q.id}`));
     return box;
+  }
+
+  // ---------------------------------------------------------------- labs
+
+  function solutionEl(def, open) {
+    const blocks = Object.entries(def.solution || {}).map(([dev, lines]) =>
+      el('div', null, el('div', { class: 'exhibit-label' }, dev), el('pre', { class: 'code' }, lines.join('\n'))));
+    const answers = (def.questions || []).length
+      ? el('div', { class: 'small' }, el('b', null, 'Ответы на вопросы: '),
+        CCNA.cli.questionAnswers(def, CCNA.cli.createLab(def)).map((a, k) => `${k + 1}) ${a[0] == null ? 'см. вывод show-команд' : a[0]}`).join('; '))
+      : null;
+    return el('details', { class: 'solution', open: !!open },
+      el('summary', null, 'Решение'),
+      el('div', { class: 'stack', style: 'margin-top:10px' }, blocks, answers,
+        def.solutionNote ? el('div', { class: 'small', html: fmt(def.solutionNote) }) : null));
+  }
+
+  function terminalEl(st, o) {
+    const devs = Object.values(st.devices).filter((d) => !d.hidden);
+    const screen = el('pre', { class: 'term-screen', tabindex: '0', 'aria-label': 'Вывод терминала' });
+    const promptEl = el('span', { class: 'term-prompt' });
+    const input = el('input', {
+      class: 'term-input',
+      type: 'text',
+      autocomplete: 'off',
+      autocapitalize: 'off',
+      autocorrect: 'off',
+      spellcheck: 'false',
+      'aria-label': 'Командная строка',
+    });
+    const tabs = el('div', { class: 'term-tabs', role: 'tablist' });
+    let histIdx = null;
+
+    const paint = () => {
+      const t = st.term[st.active];
+      tabs.querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.dev === st.active)));
+      screen.textContent = t.lines.join('\n');
+      promptEl.textContent = CCNA.cli.prompt(st, st.active);
+      input.type = t.pending ? 'password' : 'text';
+      screen.scrollTop = screen.scrollHeight;
+    };
+
+    for (const d of devs) {
+      tabs.append(el('button', {
+        type: 'button',
+        role: 'tab',
+        'data-dev': d.name,
+        onclick: () => {
+          st.active = d.name;
+          histIdx = null;
+          paint();
+          if (!o.locked) input.focus();
+        },
+      }, d.name, el('small', null, d.kind === 'router' ? 'router' : d.kind === 'switch' ? 'switch' : 'PC')));
+    }
+
+    input.addEventListener('keydown', (e) => {
+      const t = st.term[st.active];
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        CCNA.cli.exec(st, st.active, input.value);
+        input.value = '';
+        histIdx = null;
+        paint();
+        o.onChange();
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        input.value = CCNA.cli.complete(st, st.active, input.value);
+      } else if (e.key === '?' && !t.pending) {
+        e.preventDefault();
+        CCNA.cli.help(st, st.active, input.value);
+        paint();
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (!t.hist.length || t.pending) return;
+        e.preventDefault();
+        if (histIdx == null) histIdx = t.hist.length;
+        histIdx = Math.max(0, Math.min(t.hist.length, histIdx + (e.key === 'ArrowUp' ? -1 : 1)));
+        input.value = t.hist[histIdx] || '';
+      }
+    });
+    screen.addEventListener('click', () => { if (!o.locked && !window.getSelection().toString()) input.focus(); });
+
+    const box = el('div', { class: 'term' }, tabs, screen,
+      o.locked ? null : el('label', { class: 'term-line' }, promptEl, input));
+    paint();
+    return box;
+  }
+
+  /*
+   * o.locked   — terminal and answers are read-only
+   * o.check    — result of CCNA.cli.checkLab to show ✓/✗ marks
+   * o.onChange — called after every command or answer edit
+   */
+  function renderLab(def, st, o) {
+    const res = o.check;
+    const tasks = el('ol', { class: 'lab-tasks' }, (def.tasks || []).map((t, k) => el('li', {
+      class: res ? (res.tasks[k] ? 'ok' : 'bad') : '',
+    }, el('span', { html: fmt(t.text) }), res ? el('b', null, res.tasks[k] ? ' ✓' : ' ✗') : null)));
+
+    const questions = (def.questions || []).map((qq, k) => {
+      const id = `lab-${def.id}-q${k}`;
+      const input = el('input', {
+        class: 'input fill-input',
+        id,
+        type: 'text',
+        autocomplete: 'off',
+        autocapitalize: 'off',
+        spellcheck: 'false',
+        disabled: !!o.locked,
+        placeholder: 'Ответ',
+        oninput: (e) => {
+          st.answers[k] = e.target.value;
+          st.touched = true;
+          o.onChange();
+        },
+      });
+      input.value = st.answers[k] || '';
+      return el('div', { class: 'field lab-q' + (res ? (res.questions[k] ? ' ok' : ' bad') : '') },
+        el('label', { for: id, html: fmt(`${k + 1}. ${qq.text}`) }), input);
+    });
+
+    const info = el('div', { class: 'stack lab-info' },
+      el('div', { class: 'q-text', html: fmt(def.scenario || '') }),
+      def.topology ? el('div', null, el('div', { class: 'exhibit-label' }, 'Topology'), el('pre', { class: 'exhibit' }, def.topology)) : null,
+      (def.tasks || []).length ? el('div', null, el('h3', null, 'Задачи'), tasks) : null,
+      questions.length ? el('div', { class: 'stack' }, el('h3', null, 'Вопросы'), questions) : null,
+    );
+    return el('div', { class: 'lab' }, info, terminalEl(st, o));
+  }
+
+  let labOpen = null;
+  let labCheck = null;
+  let labShowSolution = false;
+
+  function openLab(id) {
+    labOpen = id;
+    labCheck = null;
+    labShowSolution = false;
+    go('labs');
+  }
+
+  function viewLabs() {
+    if (labOpen && CCNA.labs[labOpen]) return viewLabDetail(labOpen);
+    const days = sortedDays().filter((d) => d.labs.length);
+    if (!days.length) return el('section', { class: 'panel' }, 'Лабораторных работ пока нет.');
+    const total = days.reduce((a, d) => a + d.labs.length, 0);
+    const solved = days.reduce((a, d) => a + d.labs.filter((l) => db.labs[l.id] && db.labs[l.id].solved).length, 0);
+    return el('div', { class: 'stack' },
+      el('div', null, el('div', { class: 'eyebrow' }, `Решено ${solved} из ${total}`), el('h1', null, 'Практика в CLI')),
+      el('p', { class: 'muted', style: 'margin:0;max-width:75ch' },
+        'Лабораторные работы в эмуляторе Cisco IOS: настройте устройства по заданию и нажмите «Проверить». ' +
+        'Работают сокращения команд (conf t, int g0/0), подсказка ?, автодополнение Tab и история ↑ ↓. ' +
+        'Те же лабы попадают в экзамен как симуляции.'),
+      days.map((d) => el('section', { class: 'panel stack' },
+        el('div', { class: 'row' }, el('span', { class: 'day-num' }, `Day ${String(d.day).padStart(2, '0')}`), el('h2', null, d.title)),
+        el('div', { class: 'lab-list' }, d.labs.map((l) => {
+          const rec = db.labs[l.id];
+          const status = rec && rec.solved ? 'Решена' : rec && rec.state && rec.state.touched ? 'В процессе' : 'Не начата';
+          return el('button', { class: 'lab-card' + (rec && rec.solved ? ' solved' : ''), onclick: () => openLab(l.id) },
+            el('b', null, l.title),
+            el('span', { class: 'small muted' }, `${l.kind === 'simlet' ? 'Simlet' : 'Sim'} · ~${l.minutes || 10} мин · ${(l.tasks || []).length} задач, ${(l.questions || []).length} вопр.`),
+            el('span', { class: 'lab-status' }, status));
+        })))),
+    );
+  }
+
+  function viewLabDetail(id) {
+    const { lab, day } = CCNA.labs[id];
+    if (!db.labs[id] || !db.labs[id].state) db.labs[id] = { state: CCNA.cli.createLab(lab), solved: !!(db.labs[id] && db.labs[id].solved) };
+    const rec = db.labs[id];
+    const check = () => {
+      labCheck = CCNA.cli.checkLab(lab, rec.state);
+      if (labCheck.all && !rec.solved) {
+        rec.solved = true;
+        toast('Лабораторная решена');
+      }
+      save();
+      render();
+    };
+    const reset = () => openModal('Начать лабу заново?', 'Все настройки устройств и ответы в этой лабе будут сброшены.', [
+      { label: 'Отмена' },
+      { label: 'Сбросить', cls: 'primary', run: () => { rec.state = CCNA.cli.createLab(lab); labCheck = null; save(); render(); } },
+    ]);
+    return el('div', { class: 'stack' },
+      el('div', { class: 'row' },
+        el('button', { class: 'btn', onclick: () => { labOpen = null; go('labs'); } }, '← Все лабы'),
+        el('span', { class: 'tag' }, `Day ${day}`),
+        rec.solved ? el('span', { class: 'verdict-pill pass' }, 'РЕШЕНА') : null),
+      el('h1', null, lab.title),
+      el('section', { class: 'panel stack' },
+        renderLab(lab, rec.state, { check: labCheck, onChange: () => save() }),
+        labCheck ? el('div', { class: 'explain ' + (labCheck.all ? 'ok' : 'bad') },
+          el('div', { class: 'verdict' }, labCheck.all ? 'Все задачи выполнены' :
+            `Выполнено задач: ${labCheck.tasks.filter(Boolean).length} из ${labCheck.tasks.length}` +
+            (labCheck.questions.length ? `, верных ответов: ${labCheck.questions.filter(Boolean).length} из ${labCheck.questions.length}` : '')),
+          labCheck.all && lab.explanation ? el('div', { html: fmt(lab.explanation) }) : null) : null,
+        labShowSolution ? solutionEl(lab, true) : null,
+      ),
+      el('div', { class: 'toolbar-inline row' },
+        el('button', { class: 'btn primary', onclick: check }, 'Проверить'),
+        el('button', { class: 'btn', onclick: () => { labShowSolution = !labShowSolution; render(); } }, labShowSolution ? 'Скрыть решение' : 'Показать решение'),
+        el('div', { class: 'spacer' }),
+        el('button', { class: 'btn danger', onclick: reset }, 'Сбросить лабу')),
+    );
   }
 
   // ---------------------------------------------------------------- exam view
@@ -1299,6 +1590,7 @@
     if (view !== 'exam' || !db.current) return;
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' && e.target.type === 'text') return;
+    if (e.target && e.target.closest && e.target.closest('.lab')) return;
     if (tag === 'TEXTAREA' || tag === 'SELECT' || e.ctrlKey || e.metaKey || e.altKey) return;
     const ex = db.current;
     const q = ex.questions[ex.idx];

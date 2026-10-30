@@ -144,4 +144,32 @@ CCNA.registerDay({
       explanation: 'MAC 0c2f.b0c4.5b00 изучен на Gi0/2 — это known unicast, кадр пересылается только через Gi0/2.',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d06-arp',
+      kind: 'sim',
+      title: 'ARP, ping and the MAC table',
+      minutes: 8,
+      scenario: 'R1 и два ПК находятся в одной LAN 192.168.1.0/24. Выполните ping с R1, изучите ARP-таблицу и очистите устаревшие записи MAC-таблицы на SW1. MAC можно вводить в любом формате.',
+      topology: '          R1 G0/0 192.168.1.1\n              │\n            Gi0/1\n   ─────────── SW1 ───────────\n   Fa0/1                Fa0/2\n     │                    │\n    PC1 192.168.1.11     PC2 192.168.1.12',
+      devices: [
+        { name: 'R1', kind: 'router', ifaces: ['g0/0-1'], start: 'P', setup: ['interface g0/0', 'ip address 192.168.1.1 255.255.255.0', 'no shutdown'] },
+        { name: 'SW1', kind: 'switch', ifaces: ['f0/1-8', 'g0/1-2'], start: 'P', macTable: [{ mac: '0c2f.b0de.ad01', port: 'f0/3' }, { mac: '0c2f.b0de.ad02', port: 'f0/4' }] },
+        { name: 'PC1', kind: 'pc', ip: '192.168.1.11', gw: '192.168.1.1' },
+        { name: 'PC2', kind: 'pc', ip: '192.168.1.12', gw: '192.168.1.1' },
+      ],
+      links: [['R1', 'g0/0', 'SW1', 'g0/1'], ['SW1', 'f0/1', 'PC1', 'nic'], ['SW1', 'f0/2', 'PC2', 'nic']],
+      tasks: [
+        { text: 'С R1 выполните `ping 192.168.1.12` (PC2).', check: (H) => !!H.dev('R1').arp['192.168.1.12'] },
+        { text: 'На SW1 удалите **все** динамические записи из таблицы MAC-адресов.', check: (H) => H.dev('SW1').mac.length === 0 },
+      ],
+      questions: [
+        { text: 'Какой MAC-адрес у PC2? (смотрите `show arp` на R1 после ping)', answer: (H) => [H.mac('PC2')] },
+        { text: 'Какой процент успеха (Success rate) показал **первый** ping с R1 на PC2?', answer: ['80', '80%'] },
+        { text: 'Почему первый ICMP echo request не дошёл? Ответьте названием протокола, который выполнялся в это время.', answer: ['ARP'] },
+      ],
+      solution: { R1: ['ping 192.168.1.12', 'show arp'], SW1: ['show mac address-table', 'clear mac address-table dynamic', 'show mac address-table'] },
+      explanation: 'Первый ping `.!!!!`: пока R1 выяснял MAC-адрес PC2 через ARP, первый echo request не успел уйти. Повторный ping даёт `!!!!!`.',
+    },
+  ],
 });

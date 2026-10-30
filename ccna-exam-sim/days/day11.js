@@ -136,4 +136,33 @@ CCNA.registerDay({
       explanation: 'Маршрутизация (routing) — процесс, с помощью которого роутеры определяют путь, по которому IP-пакеты должны пройти до получателя. Роутеры хранят маршруты в таблице маршрутизации.',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d11-routes',
+      kind: 'sim',
+      title: 'Read the routing table',
+      minutes: 10,
+      scenario: 'На R1 настроены статические маршруты к сетям 10.0.0.0, но один из них не попадает в таблицу маршрутизации. Найдите причину с помощью `show ip route` и `show ip interface brief`, исправьте её и ответьте на вопросы.',
+      topology: '                 ┌─ G0/0 192.168.12.1 ── R2 (.2)\n            R1 ──┼─ G0/1 192.168.13.1 ── R3 (.3)\n                 └─ G0/2 192.168.14.1 ── R4 (.4)\n\nip route 10.0.0.0 255.0.0.0 192.168.12.2\nip route 10.1.0.0 255.255.0.0 192.168.13.3\nip route 10.1.1.0 255.255.255.0 192.168.14.4',
+      devices: [
+        { name: 'R1', kind: 'router', ifaces: ['g0/0-2'], start: 'P', setup: ['interface g0/0', 'ip address 192.168.12.1 255.255.255.0', 'no shutdown', 'interface g0/1', 'ip address 192.168.13.1 255.255.255.0', 'no shutdown', 'interface g0/2', 'ip address 192.168.14.1 255.255.255.0', 'exit', 'ip route 10.0.0.0 255.0.0.0 192.168.12.2', 'ip route 10.1.0.0 255.255.0.0 192.168.13.3', 'ip route 10.1.1.0 255.255.255.0 192.168.14.4'] },
+        { name: 'R2', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'ip address 192.168.12.2 255.255.255.0', 'no shutdown'] },
+        { name: 'R3', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'ip address 192.168.13.3 255.255.255.0', 'no shutdown'] },
+        { name: 'R4', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'ip address 192.168.14.4 255.255.255.0', 'no shutdown'] },
+      ],
+      links: [['R1', 'g0/0', 'R2', 'g0/0'], ['R1', 'g0/1', 'R3', 'g0/0'], ['R1', 'g0/2', 'R4', 'g0/0']],
+      tasks: [
+        { text: 'Сделайте так, чтобы маршрут **10.1.1.0/24** появился в таблице маршрутизации R1.', check: (H) => !!H.route('R1', '10.1.1.0/24') },
+      ],
+      questions: [
+        { text: 'Через какой next hop R1 отправит пакет на **10.1.1.20**?', answer: ['192.168.14.4'] },
+        { text: 'Через какой next hop R1 отправит пакет на **10.1.2.5**?', answer: ['192.168.13.3'] },
+        { text: 'Через какой next hop R1 отправит пакет на **10.200.1.1**?', answer: ['192.168.12.2'] },
+        { text: 'Какая длина префикса у local-маршрутов (код L)? (число)', answer: ['32', '/32'] },
+        { text: 'Что R1 сделает с пакетом на **172.16.1.1**? (forward / drop)', answer: ['drop', 'отбросит', 'отбросить', 'dropped'] },
+      ],
+      solution: { R1: ['show ip route', 'show ip interface brief', 'configure terminal', 'interface g0/2', 'no shutdown', 'end', 'show ip route'] },
+      solutionNote: 'G0/2 был выключен (administratively down), поэтому next hop 192.168.14.4 недостижим и статический маршрут не устанавливается. Выбор маршрута — по самому длинному совпадающему префиксу. Для 172.16.1.1 маршрута нет, а gateway of last resort не задан — пакет отбрасывается.',
+    },
+  ],
 });

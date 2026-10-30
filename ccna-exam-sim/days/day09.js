@@ -151,4 +151,33 @@ CCNA.registerDay({
       explanation: 'Префикс `a-` (auto) означает, что скорость/duplex согласованы автоматически. Без префикса (`full`, `100`) — значения заданы вручную.',
     },
   ],
+  labs: [
+    {
+      id: 'lab-d09-switchports',
+      kind: 'sim',
+      title: 'Switch interface settings and errors',
+      minutes: 10,
+      scenario: 'Пользователь на Fa0/2 жалуется на медленную сеть. Найдите проблему по счётчикам ошибок (`show interfaces`), исправьте её и выполните остальные задачи. Устройство на Fa0/2 жёстко настроено на 100 Мбит/с full duplex.',
+      topology: '      R1\n       │\n     Fa0/1\n ─────── SW1 ───────\n Fa0/2  Fa0/3  Fa0/4     Fa0/5–Fa0/12: не используются\n  │      │      │\n PC2    PC3    PC4',
+      devices: [
+        { name: 'SW1', kind: 'switch', ifaces: ['f0/1-12', 'g0/1-2'], start: 'P', ifaceOpts: { 'f0/2': { oper: { duplex: 'half', speed: 100 }, counters: { coll: 412, late: 387, outPk: 1024 } } } },
+        { name: 'R1', kind: 'router', ifaces: ['g0/0'], hidden: true, setup: ['interface g0/0', 'no shutdown'] },
+        { name: 'PC2', kind: 'pc', ip: '192.168.1.12' },
+        { name: 'PC3', kind: 'pc', ip: '192.168.1.13' },
+        { name: 'PC4', kind: 'pc', ip: '192.168.1.14' },
+      ],
+      links: [['SW1', 'f0/1', 'R1', 'g0/0'], ['SW1', 'f0/2', 'PC2', 'nic'], ['SW1', 'f0/3', 'PC3', 'nic'], ['SW1', 'f0/4', 'PC4', 'nic']],
+      tasks: [
+        { text: 'Fa0/1: скорость 100, full duplex и описание, содержащее `R1`.', check: (H) => { const i = H.ifc('SW1', 'f0/1'); return i.speed === '100' && i.duplex === 'full' && /R1/i.test(i.desc); } },
+        { text: 'Устраните duplex mismatch на Fa0/2 (100 Мбит/с, full duplex).', check: (H) => H.ifc('SW1', 'f0/2').duplex === 'full' && ['100', 'auto'].includes(H.ifc('SW1', 'f0/2').speed) },
+        { text: 'Отключите неиспользуемые интерфейсы Fa0/5–Fa0/12.', check: (H) => [5, 6, 7, 8, 9, 10, 11, 12].every((n) => H.ifc('SW1', `f0/${n}`).shutdown) },
+      ],
+      questions: [
+        { text: 'На каком интерфейсе были признаки duplex mismatch?', answer: ['Fa0/2'] },
+        { text: 'Сколько late collisions показывал этот интерфейс?', answer: ['387'] },
+      ],
+      solution: { SW1: ['show interfaces status', 'show interfaces f0/2', 'configure terminal', 'interface f0/1', 'speed 100', 'duplex full', 'description ## to R1 ##', 'interface f0/2', 'speed 100', 'duplex full', 'interface range f0/5 - 12', 'shutdown', 'end'] },
+      explanation: 'Сосед на Fa0/2 не участвует в автосогласовании, поэтому коммутатор выбрал half duplex для 100 Мбит/с. Late collisions на half-duplex стороне — признак duplex mismatch.',
+    },
+  ],
 });
