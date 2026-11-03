@@ -13,13 +13,15 @@ CCNA.manifest = [
   'day07.js', // IPv4 Addressing (Part 1)
   'day08.js', // IPv4 Addressing (Part 2)
   'day09.js', // Switch Interfaces
-  'day10.js', // IPv4 Header
-  'day11.js', // Routing Fundamentals
-  'day12.js', // Static Routing
-  'day13.js', // Life of a Packet
-  'day14.js', // Subnetting (Part 1)
-  'day15.js', // Subnetting (Part 2)
-  'day16.js', // Subnetting (Part 3 - VLSM)
-  'day17.js', // VLANs (Part 1)
-  'day18.js', // VLANs (Part 2)
+  'day10.js', // The IPv4 Header
+  'day11.js', // Routing Fundamentals (part 1) + Static Routing (part 2)
+  'day12.js', // The Life of a Packet
+  'day13.js', // Subnetting (Part 1)
+  'day14.js', // Subnetting (Part 2)
+  'day15.js', // Subnetting (Part 3 - VLSM)
+  'day16.js', // VLANs (Part 1)
+  'day17.js', // VLANs (Part 2)
+  'day18.js', // VLANs (Part 3)
+  'day19.js', // DTP/VTP
+  'day20.js', // Spanning Tree Protocol (Part 1)
 ];

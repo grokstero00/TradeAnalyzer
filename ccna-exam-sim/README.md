@@ -1,8 +1,10 @@
 # CCNA Exam Simulator
 
 Тренажёр экзамена CCNA 200-301 в стиле Boson ExSim, привязанный к дням курса
-**Jeremy's IT Lab — Free CCNA**. Сейчас в банке дни 1–18: 235 вопросов, генераторы
-задач (двоичные числа, адреса, сабнеттинг, VLSM) и 15 лабораторных работ в эмуляторе Cisco IOS.
+**Jeremy's IT Lab — Free CCNA**. Нумерация дней совпадает с плейлистом на YouTube
+(Day 11 состоит из двух видео: Routing Fundamentals и Static Routing). Сейчас в банке дни 1–20:
+276 вопросов, генераторы задач (двоичные числа, адреса, сабнеттинг, VLSM, выбор root bridge)
+и 18 лабораторных работ в эмуляторе Cisco IOS.
 
 Работает без сборки и без сервера: откройте `index.html` в браузере.
 
@@ -28,7 +30,7 @@
 
 ## Эмулятор CLI
 
-Поддерживает то, что пройдено в курсе к 18-му дню:
+Поддерживает то, что пройдено в курсе к 20-му дню:
 
 - режимы `>` `#` `(config)#` `(config-if)#` `(config-if-range)#` `(config-subif)#` `(config-vlan)#`,
   `enable`, `disable`, `configure terminal`, `exit`, `end`, `do`;
@@ -38,8 +40,15 @@
 - `ip address`, `shutdown`, `description`, `speed`, `duplex`, `interface range`, `ip route` (next hop, exit interface, оба);
 - `vlan`, `name`, `switchport mode access|trunk`, `switchport access vlan`, `switchport trunk encapsulation|allowed vlan|native vlan`,
   подинтерфейсы `encapsulation dot1q` (Router on a Stick);
+- L3-коммутатор: `ip routing`, SVI (`interface vlan 10`), routed-порты (`no switchport`), `ip route`, `ip default-gateway`;
+- DTP: `switchport mode dynamic auto|desirable`, `switchport nonegotiate`, `show interfaces X switchport`
+  (режим линка вычисляется по настройкам обеих сторон);
+- VTP: `vtp mode|domain|version`, `show vtp status`, синхронизация VLAN по revision number через trunk-линки;
+- STP (PVST+): выбор root bridge, root/designated/blocking-портов по стоимости, Bridge ID и Port ID,
+  `show spanning-tree [vlan N]`, `spanning-tree vlan N priority X`;
 - `show running-config`, `startup-config`, `ip interface brief`, `ip route`, `interfaces [status|trunk|description]`,
   `vlan brief`, `mac address-table`, `arp`; `ping`, `clear mac address-table dynamic`;
+- глобальные команды можно вводить из любого подрежима, как в IOS;
 - ПК: `ipconfig`, `ping`, `arp -a`.
 
 Ping моделирует ARP (первый ping `.!!!!`), коммутацию по VLAN и trunk, маршрутизацию по самому длинному префиксу и обратный путь.
@@ -56,16 +65,18 @@ ccna-exam-sim/
 └── days/
     ├── manifest.js    список файлов дней
     ├── _template.js   шаблон нового дня
-    └── day01.js … day18.js
+    └── day01.js … day20.js
 ```
 
 ## Как добавить новый день курса
 
 **Вариант 1 — файл в репозитории (навсегда):**
 
-1. Скопируйте `days/_template.js` в `days/day19.js`.
-2. Укажите `day: 19`, название и вопросы. Каждому вопросу нужен уникальный `id` (например `d19-01`).
-3. Добавьте `'day19.js'` в список в `days/manifest.js`.
+1. Скопируйте `days/_template.js` в `days/day21.js`.
+2. Укажите `day: 21`, название и вопросы. Каждому вопросу нужен уникальный `id` (например `d21-01`).
+   Номер дня берите из названия видео в плейлисте. Уже существующие `id` не меняйте:
+   по ним хранится статистика, поэтому после перенумерации дней часть `id` не совпадает с номером дня.
+3. Добавьте `'day21.js'` в список в `days/manifest.js`.
 4. Обновите страницу. Ошибки в вопросах показываются жёлтым баннером на главной; такие вопросы пропускаются.
 
 **Вариант 2 — импорт JSON прямо в приложении:** блок «Добавить день курса» на главной

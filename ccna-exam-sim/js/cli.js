@@ -42,6 +42,7 @@
   const IF_TYPES = [
     { full: 'GigabitEthernet', short: 'Gi' },
     { full: 'FastEthernet', short: 'Fa' },
+    { full: 'Vlan', short: 'Vl' },
   ];
 
   function ifType(word) {
@@ -51,10 +52,16 @@
 
   /* "g0/0", "Gi 0/0", "GigabitEthernet0/0.10" -> { base, sub, name } */
   function parseIf(text) {
-    const m = /^([a-z]+)\s*(\d+(?:\/\d+)+)(?:\.(\d+))?$/i.exec(String(text).trim());
+    const m = /^([a-z]+)\s*(\d+(?:\/\d+)*)(?:\.(\d+))?$/i.exec(String(text).trim());
     if (!m) return null;
     const t = ifType(m[1]);
     if (!t) return null;
+    if (t.full === 'Vlan') {
+      const v = Number(m[2]);
+      if (m[3] != null || !/^\d+$/.test(m[2]) || v < 1 || v > 4094) return null;
+      return { base: `Vlan${v}`, sub: null, name: `Vlan${v}`, svi: v };
+    }
+    if (!m[2].includes('/')) return null;
     const base = t.full + m[2];
     const sub = m[3] != null ? Number(m[3]) : null;
     return { base, sub, name: sub != null ? `${base}.${sub}` : base };
@@ -174,6 +181,9 @@
       native: 1,
       dot1q: null,
       nativeTag: false,
+      routed: false,
+      noneg: false,
+      svi: null,
       media: o.media || null,
       oper: o.oper || null,
       counters: o.counters || null,
@@ -200,6 +210,12 @@
       arp: {},
       startup: null,
       encapRequired: !!def.encapRequired,
+      l3: !!def.l3,
+      ipRouting: false,
+      gw: null,
+      vtp: Object.assign({ mode: 'server', domain: '', rev: 0, version: 1 }, def.vtp || {}),
+      bridgeMac: def.bridgeMac || macFor(def.name + 'bridge'),
+      stpPrio: {},
     };
     if (kind === 'pc') {
       d.ip = def.ip || null;
@@ -245,6 +261,35 @@
     return null;
   }
 
+  /* DTP: the administrative mode and what the link actually negotiates. */
+  const adminMode = (i) => i.mode || 'dynamic auto';
+
+  function opMode(s, dn, i) {
+    if (i.routed) return 'routed';
+    const m = adminMode(i);
+    if (m === 'access' || m === 'trunk') return m;
+    const p = peerOf(s, dn, i.name);
+    const pd = p && s.devices[p[0]];
+    if (!pd || pd.kind !== 'switch') return 'access';
+    const pi = pd.ifaces[p[1]];
+    if (!pi || pi.routed || pi.noneg) return 'access';
+    const pm = adminMode(pi);
+    if (pm === 'trunk' || pm === 'dynamic desirable') return 'trunk';
+    if (pm === 'dynamic auto' && m === 'dynamic desirable') return 'trunk';
+    return 'access';
+  }
+
+  /* Does this switch port forward frames of VLAN v? */
+  function carries(s, d, i, v) {
+    if (i.svi || i.routed || !physUp(s, d.name, i.name) || d.vlans[v] === undefined) return false;
+    return opMode(s, d.name, i) === 'trunk' ? allowedHas(i, v) : i.access === v;
+  }
+
+  function sviUp(s, d, i) {
+    if (i.shutdown || d.vlans[i.svi] === undefined) return false;
+    return Object.values(d.ifaces).some((x) => carries(s, d, x, i.svi));
+  }
+
   function physUp(s, dn, ifn) {
     const d = s.devices[dn];
     if (!d) return false;
@@ -264,6 +309,7 @@
     const d = s.devices[dn];
     const i = d && d.ifaces[ifn];
     if (!i) return false;
+    if (i.svi) return sviUp(s, d, i);
     if (i.parent) return !i.shutdown && physUp(s, dn, i.parent);
     return physUp(s, dn, ifn);
   }
@@ -277,7 +323,7 @@
     if (d.kind === 'pc') return { u: `${dn}|nic`, t: {} };
     if (!physUp(s, dn, ifn)) return null;
     const i = d.ifaces[ifn];
-    if (d.kind === 'router') {
+    if (d.kind === 'router' || i.routed) {
       const r = { u: `${dn}|${ifn}`, t: {} };
       for (const x of Object.values(d.ifaces)) {
         if (x.parent === ifn && !x.shutdown && x.dot1q && !x.nativeTag) r.t[x.dot1q] = `${dn}|${x.name}`;
@@ -285,7 +331,7 @@
       return r;
     }
     const exists = (v) => d.vlans[v] !== undefined;
-    if (i.mode === 'trunk') {
+    if (opMode(s, dn, i) === 'trunk') {
       const r = { u: exists(i.native) && allowedHas(i, i.native) ? `${dn}|v${i.native}` : null, t: {} };
       for (const v of Object.keys(d.vlans).map(Number)) {
         if (v >= 1002 && v <= 1005) continue;
@@ -319,6 +365,7 @@
   }
 
   function l2Key(d, i) {
+    if (i.svi) return `${d.name}|v${i.svi}`;
     if (!i.parent) return `${d.name}|${i.name}`;
     return i.nativeTag ? `${d.name}|${i.parent}` : `${d.name}|${i.name}`;
   }
@@ -330,7 +377,7 @@
         if (d.ip) eps.push({ dev: d.name, key: `${d.name}|nic`, ip: d.ip, p: d.prefix, mac: d.nicMac, ifn: 'nic' });
         continue;
       }
-      if (d.kind !== 'router') continue;
+      if (d.kind !== 'router' && d.kind !== 'switch') continue;
       for (const i of Object.values(d.ifaces)) {
         if (!i.ip || !ifUp(s, d.name, i.name)) continue;
         if (i.parent && !i.dot1q) continue;
@@ -372,7 +419,6 @@
 
   function owns(s, d, ip) {
     if (d.kind === 'pc') return d.ip === ip;
-    if (d.kind !== 'router') return false;
     return Object.values(d.ifaces).some((i) => i.ip === ip && ifUp(s, d.name, i.name));
   }
 
@@ -401,9 +447,14 @@
         egIf = 'nic';
         egIp = d.ip;
         egMac = d.nicMac;
-      } else if (d.kind === 'router') {
+      } else if (d.kind === 'router' || d.kind === 'switch') {
+        if (d.kind === 'switch' && !d.ipRouting && hop > 0) return { ok: false };
         if (hop > 0) routers++;
-        const r = bestRoute(routeTable(s, d).filter((x) => x.code !== 'L'), toInt(dst));
+        let r = bestRoute(routeTable(s, d).filter((x) => x.code !== 'L' && (d.kind === 'router' || d.ipRouting || x.code === 'C')), toInt(dst));
+        if (!r && d.kind === 'switch' && !d.ipRouting && d.gw) {
+          const c = bestRoute(routeTable(s, d).filter((x) => x.code === 'C'), toInt(d.gw));
+          if (c) r = { code: 'S', nh: d.gw, out: c.out };
+        }
         if (!r) return { ok: false };
         const ei = d.ifaces[r.out];
         egress = l2Key(d, ei);
@@ -420,7 +471,7 @@
       let tgt = eps.find((e) => e.ip === nh && e.key !== egress && find(e.key) === seg);
       if (!tgt && exitOnly) {
         // Proxy ARP: a router on the segment that has a route to dst answers for it.
-        tgt = eps.find((e) => e.key !== egress && find(e.key) === seg && s.devices[e.dev].kind === 'router' &&
+        tgt = eps.find((e) => e.key !== egress && find(e.key) === seg && routes(s.devices[e.dev]) &&
           bestRoute(routeTable(s, s.devices[e.dev]).filter((x) => x.code !== 'L'), toInt(dst)));
       }
       if (!tgt) return { ok: false };
@@ -434,6 +485,8 @@
     }
     return { ok: false };
   }
+
+  const routes = (d) => d.kind === 'router' || (d.kind === 'switch' && d.ipRouting);
 
   function ping(s, from, dst) {
     const d = s.devices[from];
@@ -454,7 +507,15 @@
     if (d.password != null) L.push(d.password7 ? `enable password 7 ${d.password7}` : `enable password ${d.password}`);
     if (d.secret != null || d.password != null) L.push('!');
     L.push('no aaa new-model', '!');
-    if (d.kind === 'switch') L.push('spanning-tree mode pvst', 'spanning-tree extend system-id', '!');
+    if (d.ipRouting) L.push('ip routing', '!');
+    if (d.vtp && d.vtp.mode === 'transparent') {
+      L.push(...(d.vtp.domain ? [`vtp domain ${d.vtp.domain}`] : []), 'vtp mode transparent', '!');
+    }
+    if (d.kind === 'switch') {
+      L.push('spanning-tree mode pvst', 'spanning-tree extend system-id');
+      for (const [v, pr] of Object.entries(d.stpPrio)) L.push(`spanning-tree vlan ${v} priority ${pr}`);
+      L.push('!');
+    }
     for (const i of ifList(d)) {
       L.push(`interface ${i.name}`);
       if (i.desc) L.push(` description ${i.desc}`);
@@ -465,12 +526,17 @@
         L.push(i.ip ? ` ip address ${i.ip} ${maskStr(i.prefix)}` : ' no ip address');
         if (i.shutdown) L.push(' shutdown');
         if (!i.parent) L.push(` duplex ${i.duplex}`, ` speed ${i.speed}`);
+      } else if (i.svi || i.routed) {
+        if (i.routed) L.push(' no switchport');
+        L.push(i.ip ? ` ip address ${i.ip} ${maskStr(i.prefix)}` : ' no ip address');
+        if (i.shutdown) L.push(' shutdown');
       } else {
         if (i.encap === 'dot1q') L.push(' switchport trunk encapsulation dot1q');
         if (i.native !== 1) L.push(` switchport trunk native vlan ${i.native}`);
         if (i.allowed != null) L.push(` switchport trunk allowed vlan ${i.allowed.length ? vlanListStr(i.allowed) : 'none'}`);
         if (i.access !== 1) L.push(` switchport access vlan ${i.access}`);
-        if (i.mode) L.push(` switchport mode ${i.mode}`);
+        if (i.mode && i.mode !== 'dynamic auto') L.push(` switchport mode ${i.mode}`);
+        if (i.noneg) L.push(' switchport nonegotiate');
         if (i.speed !== 'auto') L.push(` speed ${i.speed}`);
         if (i.duplex !== 'auto') L.push(` duplex ${i.duplex}`);
         if (i.shutdown) L.push(' shutdown');
@@ -478,6 +544,7 @@
       L.push('!');
     }
     if (d.kind === 'router') L.push('ip forward-protocol nd', '!', 'no ip http server', '!');
+    if (d.gw) L.push(`ip default-gateway ${d.gw}`, '!');
     if (d.routes.length) {
       for (const r of d.routes) L.push(`ip route ${toIp(r.net)} ${maskStr(r.p)}${r.iface ? ' ' + r.iface : ''}${r.nh ? ' ' + r.nh : ''}`);
       L.push('!');
@@ -578,10 +645,11 @@
 
   function showIfStatus(s, d) {
     const L = ['', 'Port      Name               Status       Vlan       Duplex  Speed  Type'];
-    for (const i of ifList(d)) {
+    for (const i of ifList(d).filter((x) => !x.svi)) {
       const up = ifUp(s, d.name, i.name);
       const st = i.shutdown ? 'disabled' : up ? 'connected' : 'notconnect';
-      const vlan = i.mode === 'trunk' ? 'trunk' : String(i.access);
+      const om = opMode(s, d.name, i);
+      const vlan = om === 'routed' ? 'routed' : om === 'trunk' ? 'trunk' : String(i.access);
       const dup = up ? (i.duplex === 'auto' ? 'a-' + operDuplex(i) : i.duplex) : i.duplex;
       const spd = up ? (i.speed === 'auto' ? 'a-' + operSpeed(i) : i.speed) : i.speed;
       const type = i.media || (i.name.startsWith('Fast') ? '10/100BaseTX' : '10/100/1000BaseTX');
@@ -646,7 +714,7 @@
   function showVlanBrief(s, d) {
     const L = ['', 'VLAN Name                             Status    Ports', '---- -------------------------------- --------- -------------------------------'];
     for (const v of Object.keys(d.vlans).map(Number).sort((a, b) => a - b)) {
-      const ports = ifList(d).filter((i) => i.mode !== 'trunk' && i.access === v).map((i) => shortIf(i.name));
+      const ports = ifList(d).filter((i) => !i.svi && !i.routed && opMode(s, d.name, i) !== 'trunk' && i.access === v).map((i) => shortIf(i.name));
       const chunks = [];
       for (let k = 0; k < ports.length; k += 4) chunks.push(ports.slice(k, k + 4).join(', '));
       const status = v >= 1002 && v <= 1005 ? 'act/unsup' : 'active';
@@ -656,11 +724,12 @@
   }
 
   function showIfTrunk(s, d) {
-    const trunks = ifList(d).filter((i) => i.mode === 'trunk' && ifUp(s, d.name, i.name));
+    const trunks = ifList(d).filter((i) => !i.svi && opMode(s, d.name, i) === 'trunk' && ifUp(s, d.name, i.name));
     if (!trunks.length) return [];
     const active = (i) => Object.keys(d.vlans).map(Number).filter((v) => (v < 1002 || v > 1005) && allowedHas(i, v));
     const L = ['', 'Port        Mode             Encapsulation  Status        Native vlan'];
-    for (const i of trunks) L.push(`${shortIf(i.name).padEnd(12)}${'on'.padEnd(17)}${'802.1q'.padEnd(15)}${'trunking'.padEnd(14)}${i.native}`);
+    const modeCol = (i) => ({ trunk: 'on', 'dynamic desirable': 'desirable', 'dynamic auto': 'auto' })[adminMode(i)] || 'on';
+    for (const i of trunks) L.push(`${shortIf(i.name).padEnd(12)}${modeCol(i).padEnd(17)}${(i.encap === 'negotiate' ? 'n-802.1q' : '802.1q').padEnd(15)}${'trunking'.padEnd(14)}${i.native}`);
     L.push('', 'Port        Vlans allowed on trunk');
     for (const i of trunks) L.push(`${shortIf(i.name).padEnd(12)}${i.allowed == null ? '1-4094' : i.allowed.length ? vlanListStr(i.allowed) : 'none'}`);
     L.push('', 'Port        Vlans allowed and active in management domain');
@@ -697,6 +766,183 @@
       L.push('.!!!!', 'Success rate is 80 percent (4/5), round-trip min/avg/max = 1/1/2 ms');
     } else {
       L.push('!!!!!', 'Success rate is 100 percent (5/5), round-trip min/avg/max = 1/1/3 ms');
+    }
+    return L;
+  }
+
+  function showSwitchport(s, d, i) {
+    const om = opMode(s, d.name, i);
+    const enc = i.encap === 'negotiate' ? (d.encapRequired ? 'negotiate' : 'dot1q') : i.encap;
+    return [
+      `Name: ${shortIf(i.name)}`,
+      `Switchport: ${i.routed ? 'Disabled' : 'Enabled'}`,
+      ...(i.routed ? [] : [
+        `Administrative Mode: ${i.mode === 'access' ? 'static access' : i.mode === 'trunk' ? 'trunk' : adminMode(i)}`,
+        `Operational Mode: ${!physUp(s, d.name, i.name) ? 'down' : om === 'trunk' ? 'trunk' : 'static access'}`,
+        `Administrative Trunking Encapsulation: ${enc}`,
+        `Operational Trunking Encapsulation: ${om === 'trunk' ? 'dot1q' : 'native'}`,
+        `Negotiation of Trunking: ${i.noneg ? 'Off' : 'On'}`,
+        `Access Mode VLAN: ${i.access} (${d.vlans[i.access] || 'Inactive'})`,
+        `Trunking Native Mode VLAN: ${i.native} (${d.vlans[i.native] || 'Inactive'})`,
+        'Administrative Native VLAN tagging: enabled',
+        'Voice VLAN: none',
+        `Trunking VLANs Enabled: ${i.allowed == null ? 'ALL' : i.allowed.length ? vlanListStr(i.allowed) : 'NONE'}`,
+        'Pruning VLANs Enabled: 2-1001',
+      ]),
+    ];
+  }
+
+  function showVtp(d) {
+    const v = d.vtp;
+    const count = Object.keys(d.vlans).length;
+    return [
+      'VTP Version capable             : 1 to 3',
+      `VTP version running             : ${v.version}`,
+      `VTP Domain Name                 : ${v.domain}`,
+      'VTP Pruning Mode                : Disabled',
+      'VTP Traps Generation            : Disabled',
+      `Device ID                       : ${d.bridgeMac}`,
+      'Configuration last modified by 0.0.0.0 at 3-1-93 00:12:39',
+      '',
+      'Feature VLAN:',
+      '--------------',
+      `VTP Operating Mode                : ${v.mode[0].toUpperCase() + v.mode.slice(1)}`,
+      'Maximum VLANs supported locally   : 1005',
+      `Number of existing VLANs          : ${count}`,
+      `Configuration Revision            : ${v.rev}`,
+    ];
+  }
+
+  /*
+   * VTP: servers and clients in one domain copy the VLAN database with the
+   * highest revision across trunks. Transparent switches relay but never apply.
+   * A switch with no domain adopts the first domain it hears.
+   */
+  function vtpSync(s) {
+    const sws = Object.values(s.devices).filter((d) => d.kind === 'switch');
+    if (sws.length < 2) return;
+    const nbrs = (d) => {
+      const out = [];
+      for (const i of Object.values(d.ifaces)) {
+        if (i.svi || !physUp(s, d.name, i.name) || opMode(s, d.name, i) !== 'trunk') continue;
+        const p = peerOf(s, d.name, i.name);
+        const pd = p && s.devices[p[0]];
+        if (pd && pd.kind === 'switch' && opMode(s, pd.name, pd.ifaces[p[1]]) === 'trunk') out.push(pd);
+      }
+      return out;
+    };
+    for (let round = 0; round < 10; round++) {
+      let changed = false;
+      for (const src of sws) {
+        if (src.vtp.mode === 'transparent' || !src.vtp.domain) continue;
+        const seen = new Set([src.name]);
+        const queue = [src];
+        while (queue.length) {
+          const cur = queue.shift();
+          for (const n of nbrs(cur)) {
+            if (seen.has(n.name)) continue;
+            seen.add(n.name);
+            if (n.vtp.mode === 'transparent') {
+              queue.push(n);
+              continue;
+            }
+            if (!n.vtp.domain) {
+              n.vtp.domain = src.vtp.domain;
+              changed = true;
+            }
+            if (n.vtp.domain !== src.vtp.domain) continue;
+            queue.push(n);
+            if (src.vtp.rev > n.vtp.rev) {
+              const keep = {};
+              for (const [v, name] of Object.entries(n.vlans)) if (Number(v) > 1005) keep[v] = name;
+              n.vlans = Object.assign({}, src.vlans, keep);
+              n.vtp.rev = src.vtp.rev;
+              changed = true;
+            }
+          }
+        }
+      }
+      if (!changed) break;
+    }
+  }
+
+  // --- Spanning Tree (802.1D / PVST+): election, roles and states per VLAN
+
+  const stpCost = (i) => ({ 10: 100, 100: 19, 1000: 4, 10000: 2 })[operSpeed(i)] || 4;
+  const portNum = (d, i) => ifList(d).filter((x) => !x.svi && !x.parent).indexOf(i) + 1;
+  const bidOf = (d, v) => ({ prio: (d.stpPrio[v] != null ? d.stpPrio[v] : 32768) + v, mac: d.bridgeMac });
+  const cmpBid = (a, b) => a.prio - b.prio || (a.mac < b.mac ? -1 : a.mac > b.mac ? 1 : 0);
+
+  function computeStp(s, v) {
+    const sws = Object.values(s.devices).filter((d) => d.kind === 'switch' && d.vlans[v] !== undefined);
+    const ports = {};
+    const links = [];
+    for (const d of sws) {
+      ports[d.name] = {};
+      for (const i of ifList(d)) if (carries(s, d, i, v)) ports[d.name][i.name] = { cost: stpCost(i), pid: portNum(d, i) };
+    }
+    for (const [a, ai, b, bi] of s.links) {
+      if (ports[a] && ports[a][ai] && ports[b] && ports[b][bi]) links.push([a, ai, b, bi]);
+    }
+    if (!sws.length) return null;
+    const bid = {};
+    for (const d of sws) bid[d.name] = bidOf(d, v);
+    const root = sws.slice().sort((x, y) => cmpBid(bid[x.name], bid[y.name]))[0].name;
+    // Root path cost with tie-breaks: cost, neighbor bridge ID, neighbor port ID, own port ID.
+    const best = { [root]: { cost: 0 } };
+    const better = (x, y) => !y || x.cost < y.cost || (x.cost === y.cost && (cmpBid(x.nb, y.nb) < 0 ||
+      (cmpBid(x.nb, y.nb) === 0 && (x.npid < y.npid || (x.npid === y.npid && x.pid < y.pid)))));
+    for (let k = 0; k < sws.length + 1; k++) {
+      for (const [a, ai, b, bi] of links) {
+        for (const [x, xi, y, yi] of [[a, ai, b, bi], [b, bi, a, ai]]) {
+          if (!best[x] || y === root) continue;
+          const cand = { cost: best[x].cost + ports[y][yi].cost, nb: bid[x], npid: ports[x][xi].pid, pid: ports[y][yi].pid, port: yi };
+          if (better(cand, best[y])) best[y] = cand;
+        }
+      }
+    }
+    const res = { root, bid, best, ports };
+    for (const d of sws) for (const n of Object.keys(ports[d.name])) Object.assign(ports[d.name][n], { role: 'Desg', state: 'FWD' });
+    for (const [a, ai, b, bi] of links) {
+      if (!best[a] || !best[b]) continue;
+      const sideA = { cost: best[a].cost, b: bid[a], pid: ports[a][ai].pid };
+      const sideB = { cost: best[b].cost, b: bid[b], pid: ports[b][bi].pid };
+      const aWins = sideA.cost < sideB.cost || (sideA.cost === sideB.cost && (cmpBid(sideA.b, sideB.b) < 0 || (cmpBid(sideA.b, sideB.b) === 0 && sideA.pid < sideB.pid)));
+      const [lx, lxi] = aWins ? [b, bi] : [a, ai];
+      const lp = ports[lx][lxi];
+      if (best[lx].port === lxi) Object.assign(lp, { role: 'Root', state: 'FWD' });
+      else Object.assign(lp, { role: 'Altn', state: 'BLK' });
+    }
+    for (const d of sws) if (d.name !== root && best[d.name]) Object.assign(ports[d.name][best[d.name].port], { role: 'Root', state: 'FWD' });
+    return res;
+  }
+
+  function showStp(s, d, v) {
+    if (d.vlans[v] === undefined) return [];
+    const r = computeStp(s, v);
+    if (!r || !Object.keys(r.ports[d.name]).length) return [];
+    const me = r.bid[d.name];
+    const rb = r.bid[r.root];
+    const isRoot = r.root === d.name;
+    const b = r.best[d.name];
+    const L = [`VLAN${String(v).padStart(4, '0')}`, '  Spanning tree enabled protocol ieee',
+      `  Root ID    Priority    ${rb.prio}`, `             Address     ${rb.mac}`];
+    if (isRoot) L.push('             This bridge is the root');
+    else if (b) {
+      const ri = d.ifaces[b.port];
+      L.push(`             Cost        ${b.cost}`, `             Port        ${portNum(d, ri)} (${ri.name})`);
+    }
+    L.push('             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec', '',
+      `  Bridge ID  Priority    ${me.prio}  (priority ${me.prio - v} sys-id-ext ${v})`,
+      `             Address     ${d.bridgeMac}`,
+      '             Hello Time   2 sec  Max Age 20 sec  Forward Delay 15 sec',
+      '             Aging Time  300 sec', '',
+      'Interface           Role Sts Cost      Prio.Nbr Type',
+      '------------------- ---- --- --------- -------- --------------------------------');
+    for (const i of ifList(d)) {
+      const pt = r.ports[d.name][i.name];
+      if (!pt) continue;
+      L.push(`${shortIf(i.name).padEnd(20)}${pt.role} ${pt.state} ${String(pt.cost).padEnd(10)}${('128.' + pt.pid).padEnd(9)}P2p`);
     }
     return L;
   }
@@ -742,7 +988,6 @@
   cmd('P', 'rs', 'configure terminal', (c) => { c.t.mode = 'G'; c.out('Enter configuration commands, one per line.  End with CNTL/Z.'); });
   cmd('UP', 'rs', 'ping <ip>', (c, [ip]) => c.out(...pingLines(c.s, c.d, ip)));
   cmd('UP', 'rs', 'show ip interface brief', (c) => c.out(...showIpIntBrief(c.s, c.d)));
-  cmd('UP', 'r', 'show ip route', (c) => c.out(...showIpRoute(c.s, c.d)));
   cmd('UP', 'rs', 'show interfaces status', (c) => {
     if (c.d.kind !== 'switch') return c.invalid(2);
     c.out(...showIfStatus(c.s, c.d));
@@ -751,11 +996,36 @@
   cmd('UP', 'rs', 'show interfaces description', (c) => c.out(...showIfDesc(c.s, c.d)));
   cmd('UP', 'rs', 'show interfaces', (c) => ifList(c.d).forEach((i) => c.out(...showInterface(c.s, c.d, i))));
   cmd('UP', 'rs', 'show interfaces <rest>', (c, [x]) => {
-    const p = parseIf(x);
+    const sw = /\s+(switchport|sw\w*)$/i.exec(x);
+    const p = parseIf(sw ? x.slice(0, sw.index) : x);
     const i = p && c.d.ifaces[p.name];
     if (!i) return c.invalid(2);
+    if (sw) {
+      if (c.d.kind !== 'switch' || i.svi) return c.invalid(3);
+      return c.out(...showSwitchport(c.s, c.d, i));
+    }
     c.out(...showInterface(c.s, c.d, i));
   });
+  cmd('UP', 'rs', 'show ip route', (c) => {
+    if (c.d.kind === 'switch' && !c.d.ipRouting) {
+      return c.out(`Default gateway is ${c.d.gw || 'not set'}`, '', 'Host               Gateway           Last Use    Total Uses  Interface', 'ICMP redirect cache is empty');
+    }
+    c.out(...showIpRoute(c.s, c.d));
+  });
+  cmd('UP', 's', 'show vtp status', (c) => c.out(...showVtp(c.d)));
+  cmd('UP', 's', 'show spanning-tree', (c) => {
+    const vs = Object.keys(c.d.vlans).map(Number).filter((v) => v < 1002 || v > 1005);
+    for (const v of vs) {
+      const o = showStp(c.s, c.d, v);
+      if (o.length) c.out(...o, '');
+    }
+  });
+  cmd('UP', 's', 'show spanning-tree vlan <vlan>', (c, [v]) => {
+    const o = showStp(c.s, c.d, Number(v));
+    if (!o.length) return c.out(`Spanning tree instance(s) for vlan ${v} does not exist.`);
+    c.out(...o);
+  });
+  cmd('UP', 's', 'show arp', (c) => c.out(...showArp(c.s, c.d)));
   cmd('UP', 's', 'show vlan brief', (c) => c.out(...showVlanBrief(c.s, c.d)));
   cmd('UP', 's', 'show vlan', (c) => c.out(...showVlanBrief(c.s, c.d)));
   cmd('UP', 's', 'show mac address-table', (c) => c.out(...showMac(c.d)));
@@ -812,7 +1082,17 @@
   });
   cmd('GIRSV', 'rs', 'interface <rest>', (c, [x]) => {
     const p = parseIf(x);
-    if (!p || !c.d.ifaces[p.base]) return c.invalid(1);
+    if (p && p.svi && c.d.kind === 'switch') {
+      if (!c.d.ifaces[p.name]) {
+        const i = newIface(c.d.name, p.name, 'router');
+        i.svi = p.svi;
+        c.d.ifaces[p.name] = i;
+      }
+      c.t.mode = 'I';
+      c.t.sel = [p.name];
+      return;
+    }
+    if (!p || p.svi || !c.d.ifaces[p.base]) return c.invalid(1);
     if (p.sub != null) {
       if (c.d.kind !== 'router' || p.sub === 0) return c.invalid(1);
       if (!c.d.ifaces[p.name]) {
@@ -828,28 +1108,80 @@
     }
     c.t.sel = [p.name];
   });
-  cmd('G', 'r', 'ip route <ip> <mask> <rest>', (c, [net, mask, rest]) => addRoute(c, net, mask, rest));
-  cmd('G', 'r', 'no ip route <ip> <mask> <rest>', (c, [net, mask, rest]) => delRoute(c, net, mask, rest));
-  cmd('G', 'r', 'no ip route <ip> <mask>', (c, [net, mask]) => delRoute(c, net, mask, null));
+  const l3 = (c) => c.d.kind === 'router' || c.d.l3;
+  cmd('G', 'rs', 'ip route <ip> <mask> <rest>', (c, [net, mask, rest]) => (l3(c) ? addRoute(c, net, mask, rest) : c.invalid(1)));
+  cmd('G', 'rs', 'no ip route <ip> <mask> <rest>', (c, [net, mask, rest]) => (l3(c) ? delRoute(c, net, mask, rest) : c.invalid(2)));
+  cmd('G', 'rs', 'no ip route <ip> <mask>', (c, [net, mask]) => (l3(c) ? delRoute(c, net, mask, null) : c.invalid(2)));
+  cmd('G', 's', 'ip routing', (c) => { if (!c.d.l3) return c.invalid(1); c.d.ipRouting = true; });
+  cmd('G', 's', 'no ip routing', (c) => { if (!c.d.l3) return c.invalid(2); c.d.ipRouting = false; });
+  cmd('G', 's', 'ip default-gateway <ip>', (c, [ip]) => { c.d.gw = ip; });
+  cmd('G', 's', 'no ip default-gateway', (c) => { c.d.gw = null; });
+  cmd('G', 's', 'vtp mode <word>', (c, [m]) => {
+    const mode = ['server', 'client', 'transparent'].find((x) => x.startsWith(m.toLowerCase()));
+    if (!mode) return c.invalid(2);
+    if (mode !== c.d.vtp.mode && (mode === 'transparent' || c.d.vtp.mode === 'transparent')) c.d.vtp.rev = 0;
+    c.d.vtp.mode = mode;
+    c.out(`Setting device to VTP ${mode.toUpperCase()} mode for VLANS.`);
+  });
+  cmd('G', 's', 'vtp domain <word>', (c, [n]) => {
+    if (c.d.vtp.domain === n) return c.out(`Domain name already set to ${n}.`);
+    c.out(`Changing VTP domain name from ${c.d.vtp.domain || 'NULL'} to ${n}`);
+    c.d.vtp.domain = n;
+    c.d.vtp.rev = 0;
+  });
+  cmd('G', 's', 'vtp version <word>', (c, [v]) => {
+    if (!['1', '2', '3'].includes(v)) return c.invalid(2);
+    if (v === '3' && !c.d.vtp.domain) return c.out('Cannot set the version to 3 because domain name is not configured');
+    c.d.vtp.version = Number(v);
+  });
+  cmd('G', 's', 'spanning-tree vlan <vlanlist> priority <word>', (c, [list, pr]) => {
+    const vs = parseVlanList(list);
+    const n = Number(pr);
+    if (!vs || !/^\d+$/.test(pr) || n > 61440) return c.invalid(4);
+    if (n % 4096) {
+      return c.out('% Bridge Priority must be in increments of 4096.', '% Allowed values are:',
+        '  0     4096  8192  12288 16384 20480 24576 28672', '  32768 36864 40960 45056 49152 53248 57344 61440');
+    }
+    for (const v of vs) c.d.stpPrio[v] = n;
+  });
+  cmd('G', 's', 'no spanning-tree vlan <vlanlist> priority', (c, [list]) => {
+    for (const v of parseVlanList(list) || []) delete c.d.stpPrio[v];
+  });
+  const VTP_CLIENT = 'VTP VLAN configuration not allowed when device is in CLIENT mode.';
+  const bump = (d) => { if (d.vtp.mode === 'server') d.vtp.rev++; };
   cmd('GIRSV', 's', 'vlan <vlanlist>', (c, [list]) => {
     const vs = parseVlanList(list);
     if (!vs) return c.invalid(1);
-    for (const v of vs) if (c.d.vlans[v] === undefined) c.d.vlans[v] = `VLAN${String(v).padStart(4, '0')}`;
+    if (c.d.vtp.mode === 'client' && vs.some((v) => c.d.vlans[v] === undefined)) return c.out(VTP_CLIENT);
+    for (const v of vs) {
+      if (c.d.vlans[v] === undefined) {
+        c.d.vlans[v] = `VLAN${String(v).padStart(4, '0')}`;
+        bump(c.d);
+      }
+    }
     c.t.mode = 'V';
     c.t.vlans = vs;
   });
   cmd('G', 's', 'no vlan <vlanlist>', (c, [list]) => {
     const vs = parseVlanList(list);
     if (!vs) return c.invalid(2);
+    if (c.d.vtp.mode === 'client') return c.out(VTP_CLIENT);
     for (const v of vs) {
       if (RESERVED_VLAN(v)) c.out(`%Default VLAN ${v} may not be deleted.`);
-      else delete c.d.vlans[v];
+      else if (c.d.vlans[v] !== undefined) {
+        delete c.d.vlans[v];
+        bump(c.d);
+      }
     }
   });
   cmd('V', 's', 'name <word>', (c, [n]) => {
     for (const v of c.t.vlans) {
       if (RESERVED_VLAN(v)) c.out(`Default VLAN ${v} may not have its name changed.`);
-      else c.d.vlans[v] = n;
+      else if (c.d.vtp.mode === 'client') c.out(VTP_CLIENT);
+      else if (c.d.vlans[v] !== n) {
+        c.d.vlans[v] = n;
+        bump(c.d);
+      }
     }
   });
 
@@ -928,6 +1260,7 @@
     const p = maskLen(mask);
     if (p < 0) return c.out(`Bad mask ${hex32(toInt(mask))} for address ${ip}`);
     const i = c.d.ifaces[c.t.sel[0]];
+    if (c.d.kind === 'switch' && !i.svi && !i.routed) return c.invalid(0);
     if (i.parent && !i.dot1q) {
       return c.out('% Configuring IP routing on a LAN subinterface is only allowed if that', 'subinterface is already configured as part of an IEEE 802.10, IEEE 802.1Q,', 'or ISL vLAN.', '');
     }
@@ -948,26 +1281,56 @@
     i.prefix = p;
   }
 
-  cmd('IS', 'r', 'ip address <ip> <mask>', (c, [ip, mask]) => setIp(c, ip, mask));
-  cmd('IS', 'r', 'no ip address', (c) => each(c, (i) => { i.ip = null; i.prefix = null; }));
+  cmd('IS', 'rs', 'ip address <ip> <mask>', (c, [ip, mask]) => setIp(c, ip, mask));
+  cmd('IS', 'rs', 'no ip address', (c) => each(c, (i) => { i.ip = null; i.prefix = null; }));
+  const l2Only = (c) => c.t.sel.some((n) => c.d.ifaces[n].svi);
+  cmd(IF_MODES, 's', 'no switchport', (c) => {
+    if (!c.d.l3 || l2Only(c)) return c.invalid(1);
+    each(c, (i) => { i.routed = true; });
+  });
+  cmd(IF_MODES, 's', 'switchport', (c) => {
+    if (l2Only(c)) return c.invalid(0);
+    each(c, (i) => { i.routed = false; i.ip = null; i.prefix = null; });
+  });
   cmd('S', 'r', 'encapsulation dot1q <vlan>', (c, [v]) => each(c, (i) => { i.dot1q = Number(v); i.nativeTag = false; }));
   cmd('S', 'r', 'encapsulation dot1q <vlan> native', (c, [v]) => each(c, (i) => { i.dot1q = Number(v); i.nativeTag = true; }));
 
+  const portOnly = (c) => c.t.sel.some((n) => c.d.ifaces[n].svi || c.d.ifaces[n].routed);
+  cmd(IF_MODES, 's', 'switchport mode dynamic <word>', (c, [m]) => {
+    const mode = ['auto', 'desirable'].find((x) => x.startsWith(m.toLowerCase()));
+    if (!mode || portOnly(c)) return c.invalid(3);
+    if (c.t.sel.some((n) => c.d.ifaces[n].noneg)) {
+      return c.out('Command rejected: Conflict between \'nonegotiate\' and \'dynamic\' status.');
+    }
+    each(c, (i) => { i.mode = `dynamic ${mode}`; });
+  });
   cmd(IF_MODES, 's', 'switchport mode <word>', (c, [m]) => {
     const mode = ['access', 'trunk'].find((x) => x.startsWith(m.toLowerCase()));
-    if (!mode) return c.invalid(2);
+    if (!mode || portOnly(c)) return c.invalid(2);
     if (mode === 'trunk' && c.d.encapRequired && c.t.sel.some((n) => c.d.ifaces[n].encap !== 'dot1q')) {
       return c.out('Command rejected: An interface whose trunk encapsulation is "Auto" can not be configured to "trunk" mode.');
     }
     each(c, (i) => { i.mode = mode; });
   });
   cmd(IF_MODES, 's', 'no switchport mode', (c) => each(c, (i) => { i.mode = null; }));
-  cmd(IF_MODES, 's', 'switchport nonegotiate', () => {});
+  cmd(IF_MODES, 's', 'switchport nonegotiate', (c) => {
+    if (portOnly(c)) return c.invalid(1);
+    if (c.t.sel.some((n) => adminMode(c.d.ifaces[n]).startsWith('dynamic'))) {
+      return c.out('Command rejected: Conflict between \'nonegotiate\' and \'dynamic\' status.');
+    }
+    each(c, (i) => { i.noneg = true; });
+  });
+  cmd(IF_MODES, 's', 'no switchport nonegotiate', (c) => each(c, (i) => { i.noneg = false; }));
   cmd(IF_MODES, 's', 'switchport access vlan <vlan>', (c, [v]) => {
     const n = Number(v);
     if (c.d.vlans[n] === undefined) {
-      c.out('% Access VLAN does not exist. Creating vlan ' + n);
-      c.d.vlans[n] = `VLAN${String(n).padStart(4, '0')}`;
+      if (c.d.vtp.mode === 'client') {
+        c.out('% Access VLAN does not exist. Creating vlan ' + n, VTP_CLIENT);
+      } else {
+        c.out('% Access VLAN does not exist. Creating vlan ' + n);
+        c.d.vlans[n] = `VLAN${String(n).padStart(4, '0')}`;
+        bump(c.d);
+      }
     }
     each(c, (i) => { i.access = n; });
   });
@@ -1092,7 +1455,7 @@
     const toks = tokenize(line);
     if (!toks.length) return;
     let r = match(mode, d.kind, toks, line);
-    if (r.error === 'invalid' && r.at === 0 && 'IRSV'.includes(mode)) {
+    if (r.error && 'IRSV'.includes(mode)) {
       const g = match('G', d.kind, toks, line);
       if (!g.error) {
         t.mode = 'G';
@@ -1160,7 +1523,28 @@
     }
   }
 
+  /* Fills fields added in later versions, so lab states saved by older versions keep working. */
+  function upgrade(s) {
+    if (s.v === 2) return s;
+    for (const d of Object.values(s.devices)) {
+      if (d.kind === 'pc') continue;
+      if (!d.vtp) d.vtp = { mode: 'server', domain: '', rev: 0, version: 1 };
+      if (!d.stpPrio) d.stpPrio = {};
+      if (!d.bridgeMac) d.bridgeMac = macFor(d.name + 'bridge');
+      if (d.ipRouting == null) d.ipRouting = false;
+      if (d.gw === undefined) d.gw = null;
+      for (const i of Object.values(d.ifaces)) {
+        if (i.routed == null) i.routed = false;
+        if (i.noneg == null) i.noneg = false;
+        if (i.svi === undefined) i.svi = null;
+      }
+    }
+    s.v = 2;
+    return s;
+  }
+
   function exec(s, name, line) {
+    upgrade(s);
     const d = s.devices[name];
     const t = s.term[name];
     const out = [];
@@ -1182,6 +1566,7 @@
     out.push(p + line);
     if (d.kind === 'pc') pcExec(s, d, line, out);
     else runLine(s, name, t.mode, line, out, p.length);
+    vtpSync(s);
     if (line.trim()) {
       t.hist.push(line);
       if (t.hist.length > 50) t.hist.shift();
@@ -1231,6 +1616,7 @@
 
   /* IOS-style "?" help. `line` is the input without the question mark. */
   function help(s, name, line) {
+    upgrade(s);
     const out = [prompt(s, name) + line + '?'];
     const c = candidates(s, name, line);
     if (s.devices[name].kind === 'pc') out.push('ipconfig   ping <ip>   arp -a');
@@ -1261,7 +1647,7 @@
   }
 
   function createLab(def) {
-    const s = { lab: def.id, devices: {}, links: [], term: {}, active: null, answers: [], touched: false };
+    const s = { lab: def.id, v: 2, devices: {}, links: [], term: {}, active: null, answers: [], touched: false };
     for (const dd of def.devices) s.devices[dd.name] = newDevice(dd);
     for (const [a, ai, b, bi] of def.links || []) {
       const na = s.devices[a].kind === 'pc' ? 'nic' : parseIf(ai).name;
@@ -1278,6 +1664,7 @@
       }
       if (dd.saved) s.devices[dd.name].startup = runBody(s.devices[dd.name]).join('\n');
     }
+    vtpSync(s);
     for (const dd of def.devices) {
       const d = s.devices[dd.name];
       const banner = d.kind === 'pc'
@@ -1327,12 +1714,15 @@
       },
       saved: (n) => dev(n).startup != null && dev(n).startup === runBody(dev(n)).join('\n'),
       vlan: (n, v) => (dev(n).vlans || {})[v],
+      op: (n, x) => opMode(s, n, ifc(n, x)),
+      stp: (v) => computeStp(s, v),
       mac: (n, x) => (x ? ifc(n, x).mac : dev(n).nicMac),
       answer: (k) => s.answers[k] || '',
     };
   }
 
   function checkLab(def, s) {
+    upgrade(s);
     const H = helpers(s);
     const tasks = (def.tasks || []).map((t) => {
       try {
