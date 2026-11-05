@@ -24,4 +24,6 @@ CCNA.manifest = [
   'day18.js', // VLANs (Part 3)
   'day19.js', // DTP/VTP
   'day20.js', // Spanning Tree Protocol (Part 1)
+  'day21.js', // Spanning Tree Protocol (Part 2)
+  'day22.js', // Rapid Spanning Tree Protocol
 ];

@@ -2,9 +2,13 @@
 
 Тренажёр экзамена CCNA 200-301 в стиле Boson ExSim, привязанный к дням курса
 **Jeremy's IT Lab — Free CCNA**. Нумерация дней совпадает с плейлистом на YouTube
-(Day 11 состоит из двух видео: Routing Fundamentals и Static Routing). Сейчас в банке дни 1–20:
-276 вопросов, генераторы задач (двоичные числа, адреса, сабнеттинг, VLSM, выбор root bridge)
-и 18 лабораторных работ в эмуляторе Cisco IOS.
+(Day 11 состоит из двух видео: Routing Fundamentals и Static Routing). Сейчас в банке дни 1–22:
+314 вопросов, генераторы задач (двоичные числа, адреса, сабнеттинг, VLSM, выбор root bridge,
+`root primary`) и 20 лабораторных работ в эмуляторе Cisco IOS.
+
+Содержание дней 18–22 сверено с конспектом курса
+[psaumur/CCNA_Course_Notes](https://github.com/psaumur/CCNA_Course_Notes). Вопросы и лабы
+написаны по материалу уроков, но это не копии вопросов и лаб из курса.
 
 Работает без сборки и без сервера: откройте `index.html` в браузере.
 
@@ -30,7 +34,7 @@
 
 ## Эмулятор CLI
 
-Поддерживает то, что пройдено в курсе к 20-му дню:
+Поддерживает то, что пройдено в курсе к 22-му дню:
 
 - режимы `>` `#` `(config)#` `(config-if)#` `(config-if-range)#` `(config-subif)#` `(config-vlan)#`,
   `enable`, `disable`, `configure terminal`, `exit`, `end`, `do`;
@@ -44,8 +48,11 @@
 - DTP: `switchport mode dynamic auto|desirable`, `switchport nonegotiate`, `show interfaces X switchport`
   (режим линка вычисляется по настройкам обеих сторон);
 - VTP: `vtp mode|domain|version`, `show vtp status`, синхронизация VLAN по revision number через trunk-линки;
-- STP (PVST+): выбор root bridge, root/designated/blocking-портов по стоимости, Bridge ID и Port ID,
-  `show spanning-tree [vlan N]`, `spanning-tree vlan N priority X`;
+- STP (PVST+ / Rapid PVST+): выбор root bridge, root/designated/alternate-портов по стоимости, Bridge ID и Port ID,
+  `show spanning-tree [vlan N]`, `spanning-tree mode pvst|rapid-pvst|mst`, `spanning-tree vlan N priority X`,
+  `spanning-tree vlan N root primary|secondary`, на интерфейсе `spanning-tree vlan N cost|port-priority`,
+  `spanning-tree portfast`, `spanning-tree bpduguard enable` (порт уходит в err-disabled при получении BPDU),
+  `spanning-tree link-type`, глобальные `spanning-tree portfast default` и `spanning-tree portfast bpduguard default`;
 - `show running-config`, `startup-config`, `ip interface brief`, `ip route`, `interfaces [status|trunk|description]`,
   `vlan brief`, `mac address-table`, `arp`; `ping`, `clear mac address-table dynamic`;
 - глобальные команды можно вводить из любого подрежима, как в IOS;
@@ -65,18 +72,18 @@ ccna-exam-sim/
 └── days/
     ├── manifest.js    список файлов дней
     ├── _template.js   шаблон нового дня
-    └── day01.js … day20.js
+    └── day01.js … day22.js
 ```
 
 ## Как добавить новый день курса
 
 **Вариант 1 — файл в репозитории (навсегда):**
 
-1. Скопируйте `days/_template.js` в `days/day21.js`.
-2. Укажите `day: 21`, название и вопросы. Каждому вопросу нужен уникальный `id` (например `d21-01`).
+1. Скопируйте `days/_template.js` в `days/day23.js`.
+2. Укажите `day: 23`, название и вопросы. Каждому вопросу нужен уникальный `id` (например `d23-01`).
    Номер дня берите из названия видео в плейлисте. Уже существующие `id` не меняйте:
    по ним хранится статистика, поэтому после перенумерации дней часть `id` не совпадает с номером дня.
-3. Добавьте `'day21.js'` в список в `days/manifest.js`.
+3. Добавьте `'day23.js'` в список в `days/manifest.js`.
 4. Обновите страницу. Ошибки в вопросах показываются жёлтым баннером на главной; такие вопросы пропускаются.
 
 **Вариант 2 — импорт JSON прямо в приложении:** блок «Добавить день курса» на главной

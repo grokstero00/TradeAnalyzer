@@ -184,6 +184,11 @@
       routed: false,
       noneg: false,
       svi: null,
+      portfast: null,
+      bpduguard: false,
+      errDisabled: false,
+      stpCost: {},
+      stpPortPrio: {},
       media: o.media || null,
       oper: o.oper || null,
       counters: o.counters || null,
@@ -216,6 +221,9 @@
       vtp: Object.assign({ mode: 'server', domain: '', rev: 0, version: 1 }, def.vtp || {}),
       bridgeMac: def.bridgeMac || macFor(def.name + 'bridge'),
       stpPrio: {},
+      stpMode: 'pvst',
+      portfastDefault: false,
+      bpduguardDefault: false,
     };
     if (kind === 'pc') {
       d.ip = def.ip || null;
@@ -295,14 +303,14 @@
     if (!d) return false;
     if (d.kind === 'pc') return true;
     const i = d.ifaces[ifn];
-    if (!i || i.shutdown) return false;
+    if (!i || i.shutdown || i.errDisabled) return false;
     const p = peerOf(s, dn, ifn);
     if (!p) return false;
     const pd = s.devices[p[0]];
     if (!pd) return false;
     if (pd.kind === 'pc') return true;
     const pi = pd.ifaces[p[1]];
-    return !!pi && !pi.shutdown;
+    return !!pi && !pi.shutdown && !pi.errDisabled;
   }
 
   function ifUp(s, dn, ifn) {
@@ -512,7 +520,10 @@
       L.push(...(d.vtp.domain ? [`vtp domain ${d.vtp.domain}`] : []), 'vtp mode transparent', '!');
     }
     if (d.kind === 'switch') {
-      L.push('spanning-tree mode pvst', 'spanning-tree extend system-id');
+      L.push(`spanning-tree mode ${d.stpMode}`);
+      if (d.portfastDefault) L.push('spanning-tree portfast default');
+      if (d.bpduguardDefault) L.push('spanning-tree portfast bpduguard default');
+      L.push('spanning-tree extend system-id');
       for (const [v, pr] of Object.entries(d.stpPrio)) L.push(`spanning-tree vlan ${v} priority ${pr}`);
       L.push('!');
     }
@@ -537,6 +548,12 @@
         if (i.access !== 1) L.push(` switchport access vlan ${i.access}`);
         if (i.mode && i.mode !== 'dynamic auto') L.push(` switchport mode ${i.mode}`);
         if (i.noneg) L.push(' switchport nonegotiate');
+        if (i.portfast === true) L.push(' spanning-tree portfast');
+        if (i.portfast === false) L.push(' spanning-tree portfast disable');
+        if (i.bpduguard) L.push(' spanning-tree bpduguard enable');
+        if (i.linkType) L.push(` spanning-tree link-type ${i.linkType}`);
+        for (const [v, c] of Object.entries(i.stpCost)) L.push(` spanning-tree vlan ${v} cost ${c}`);
+        for (const [v, c] of Object.entries(i.stpPortPrio)) L.push(` spanning-tree vlan ${v} port-priority ${c}`);
         if (i.speed !== 'auto') L.push(` speed ${i.speed}`);
         if (i.duplex !== 'auto') L.push(` duplex ${i.duplex}`);
         if (i.shutdown) L.push(' shutdown');
@@ -566,6 +583,7 @@
 
   function ifStatus(s, d, i) {
     if (i.shutdown || (i.parent && d.ifaces[i.parent].shutdown)) return ['administratively down', 'down'];
+    if (i.errDisabled) return ['down', 'down'];
     return ifUp(s, d.name, i.name) ? ['up', 'up'] : ['down', 'down'];
   }
 
@@ -647,7 +665,7 @@
     const L = ['', 'Port      Name               Status       Vlan       Duplex  Speed  Type'];
     for (const i of ifList(d).filter((x) => !x.svi)) {
       const up = ifUp(s, d.name, i.name);
-      const st = i.shutdown ? 'disabled' : up ? 'connected' : 'notconnect';
+      const st = i.shutdown ? 'disabled' : i.errDisabled ? 'err-disabled' : up ? 'connected' : 'notconnect';
       const om = opMode(s, d.name, i);
       const vlan = om === 'routed' ? 'routed' : om === 'trunk' ? 'trunk' : String(i.access);
       const dup = up ? (i.duplex === 'auto' ? 'a-' + operDuplex(i) : i.duplex) : i.duplex;
@@ -673,7 +691,7 @@
     const c = Object.assign({ inPk: up ? 1834 : 0, outPk: up ? 1291 : 0, runts: 0, giants: 0, crc: 0, frame: 0, inErr: 0, outErr: 0, coll: 0, late: 0 }, i.counters || {});
     const hw = d.kind === 'router' ? 'iGbE' : i.name.startsWith('Fast') ? 'Fast Ethernet' : 'Gigabit Ethernet';
     const mac = i.parent ? d.ifaces[i.parent].mac : i.mac;
-    const L = [`${i.name} is ${st}, line protocol is ${pr}${d.kind === 'switch' && !up && st !== 'administratively down' ? ' (notconnect)' : d.kind === 'switch' && up ? ' (connected)' : ''}`,
+    const L = [`${i.name} is ${st}, line protocol is ${pr}${d.kind === 'switch' && !up && st !== 'administratively down' ? (i.errDisabled ? ' (err-disabled)' : ' (notconnect)') : d.kind === 'switch' && up ? ' (connected)' : ''}`,
       `  Hardware is ${hw}, address is ${mac} (bia ${mac})`];
     if (i.desc) L.push(`  Description: ${i.desc}`);
     if (i.ip) L.push(`  Internet address is ${i.ip}/${i.prefix}`);
@@ -815,7 +833,8 @@
 
   /*
    * VTP: servers and clients in one domain copy the VLAN database with the
-   * highest revision across trunks. Transparent switches relay but never apply.
+   * highest revision across trunks. Transparent switches relay advertisements
+   * of their own domain but never apply them.
    * A switch with no domain adopts the first domain it hears.
    */
   function vtpSync(s) {
@@ -843,7 +862,7 @@
             if (seen.has(n.name)) continue;
             seen.add(n.name);
             if (n.vtp.mode === 'transparent') {
-              queue.push(n);
+              if (n.vtp.domain === src.vtp.domain) queue.push(n);
               continue;
             }
             if (!n.vtp.domain) {
@@ -870,6 +889,9 @@
 
   const stpCost = (i) => ({ 10: 100, 100: 19, 1000: 4, 10000: 2 })[operSpeed(i)] || 4;
   const portNum = (d, i) => ifList(d).filter((x) => !x.svi && !x.parent).indexOf(i) + 1;
+  const portPrio = (i, v) => (i.stpPortPrio[v] != null ? i.stpPortPrio[v] : 128);
+  const portfastOn = (s, d, i) => i.portfast === true || (i.portfast !== false && d.portfastDefault && opMode(s, d.name, i) === 'access');
+  const bpduguardOn = (s, d, i) => i.bpduguard || (d.bpduguardDefault && portfastOn(s, d, i));
   const bidOf = (d, v) => ({ prio: (d.stpPrio[v] != null ? d.stpPrio[v] : 32768) + v, mac: d.bridgeMac });
   const cmpBid = (a, b) => a.prio - b.prio || (a.mac < b.mac ? -1 : a.mac > b.mac ? 1 : 0);
 
@@ -879,7 +901,12 @@
     const links = [];
     for (const d of sws) {
       ports[d.name] = {};
-      for (const i of ifList(d)) if (carries(s, d, i, v)) ports[d.name][i.name] = { cost: stpCost(i), pid: portNum(d, i) };
+      for (const i of ifList(d)) {
+        if (!carries(s, d, i, v)) continue;
+        const num = portNum(d, i);
+        const pr = portPrio(i, v);
+        ports[d.name][i.name] = { cost: i.stpCost[v] != null ? i.stpCost[v] : stpCost(i), pid: pr * 4096 + num, prio: pr, num };
+      }
     }
     for (const [a, ai, b, bi] of s.links) {
       if (ports[a] && ports[a][ai] && ports[b] && ports[b][bi]) links.push([a, ai, b, bi]);
@@ -925,7 +952,8 @@
     const rb = r.bid[r.root];
     const isRoot = r.root === d.name;
     const b = r.best[d.name];
-    const L = [`VLAN${String(v).padStart(4, '0')}`, '  Spanning tree enabled protocol ieee',
+    const proto = { 'rapid-pvst': 'rstp', mst: 'mstp' }[d.stpMode] || 'ieee';
+    const L = [`VLAN${String(v).padStart(4, '0')}`, `  Spanning tree enabled protocol ${proto}`,
       `  Root ID    Priority    ${rb.prio}`, `             Address     ${rb.mac}`];
     if (isRoot) L.push('             This bridge is the root');
     else if (b) {
@@ -942,9 +970,31 @@
     for (const i of ifList(d)) {
       const pt = r.ports[d.name][i.name];
       if (!pt) continue;
-      L.push(`${shortIf(i.name).padEnd(20)}${pt.role} ${pt.state} ${String(pt.cost).padEnd(10)}${('128.' + pt.pid).padEnd(9)}P2p`);
+      const shared = i.linkType ? i.linkType === 'shared' : operDuplex(i) === 'half';
+      const type = (shared ? 'Shr' : 'P2p') + (portfastOn(s, d, i) ? ' Edge' : '');
+      L.push(`${shortIf(i.name).padEnd(20)}${pt.role} ${pt.state} ${String(pt.cost).padEnd(10)}${(pt.prio + '.' + pt.num).padEnd(9)}${type}`);
     }
     return L;
+  }
+
+  function bpduGuard(s) {
+    const logs = {};
+    for (const d of Object.values(s.devices)) {
+      if (d.kind !== 'switch') continue;
+      for (const i of Object.values(d.ifaces)) {
+        if (i.svi || i.routed || i.shutdown || i.errDisabled || !bpduguardOn(s, d, i)) continue;
+        const p = peerOf(s, d.name, i.name);
+        const pd = p && s.devices[p[0]];
+        const pi = pd && pd.ifaces && pd.ifaces[p[1]];
+        if (!pd || pd.kind !== 'switch' || !pi || pi.routed || pi.shutdown || pi.errDisabled) continue;
+        i.errDisabled = true;
+        const n = shortIf(i.name);
+        (logs[d.name] = logs[d.name] || []).push(
+          `%SPANTREE-2-BLOCK_BPDUGUARD: Received BPDU on port ${n} with BPDU Guard enabled. Disabling port.`,
+          `%PM-4-ERR_DISABLE: bpduguard error detected on ${n}, putting ${n} in err-disable state`);
+      }
+    }
+    return logs;
   }
 
   // ---------------------------------------------------------------- command table
@@ -1144,6 +1194,70 @@
     }
     for (const v of vs) c.d.stpPrio[v] = n;
   });
+  cmd('G', 's', 'spanning-tree mode <word>', (c, [m]) => {
+    const mode = ['pvst', 'rapid-pvst', 'mst'].find((x) => x === m.toLowerCase()) || (m.toLowerCase().startsWith('r') ? 'rapid-pvst' : m.toLowerCase().startsWith('m') ? 'mst' : null);
+    if (!mode) return c.invalid(2);
+    c.d.stpMode = mode;
+  });
+  const setRoot = (c, list, primary) => {
+    const vs = parseVlanList(list);
+    if (!vs) return c.invalid(2);
+    for (const v of vs) {
+      if (!primary) {
+        c.d.stpPrio[v] = 28672;
+        continue;
+      }
+      // Course rule: 24576, or 4096 below the current root if that root is already at or below 24576.
+      const others = Object.values(c.s.devices).filter((x) => x.kind === 'switch' && x !== c.d && x.vlans[v] !== undefined).map((x) => bidOf(x, v));
+      const mine = { prio: 24576 + v, mac: c.d.bridgeMac };
+      const best = others.sort(cmpBid)[0];
+      c.d.stpPrio[v] = best && cmpBid(best, mine) < 0 ? Math.max(0, best.prio - v - 4096) : 24576;
+    }
+  };
+  cmd('G', 's', 'spanning-tree vlan <vlanlist> root primary', (c, [list]) => setRoot(c, list, true));
+  cmd('G', 's', 'spanning-tree vlan <vlanlist> root secondary', (c, [list]) => setRoot(c, list, false));
+  cmd('G', 's', 'spanning-tree portfast default', (c) => {
+    c.d.portfastDefault = true;
+    c.out('%Warning: this command enables portfast by default on all interfaces. You', ' should now disable portfast explicitly on switched ports leading to hubs,', ' switches and bridges as they may create temporary bridging loops.');
+  });
+  cmd('G', 's', 'no spanning-tree portfast default', (c) => { c.d.portfastDefault = false; });
+  cmd('G', 's', 'spanning-tree portfast bpduguard default', (c) => { c.d.bpduguardDefault = true; });
+  cmd('G', 's', 'no spanning-tree portfast bpduguard default', (c) => { c.d.bpduguardDefault = false; });
+  cmd(IF_MODES, 's', 'spanning-tree portfast', (c) => {
+    if (portOnly(c)) return c.invalid(0);
+    each(c, (i) => { i.portfast = true; });
+    c.out('%Warning: portfast should only be enabled on ports connected to a single',
+      ' host. Connecting hubs, concentrators, switches, bridges, etc... to this',
+      ' interface  when portfast is enabled, can cause temporary bridging loops.',
+      ' Use with CAUTION', '');
+  });
+  cmd(IF_MODES, 's', 'spanning-tree portfast disable', (c) => each(c, (i) => { i.portfast = false; }));
+  cmd(IF_MODES, 's', 'no spanning-tree portfast', (c) => each(c, (i) => { i.portfast = null; }));
+  cmd(IF_MODES, 's', 'spanning-tree bpduguard enable', (c) => {
+    if (portOnly(c)) return c.invalid(0);
+    each(c, (i) => { i.bpduguard = true; });
+  });
+  cmd(IF_MODES, 's', 'spanning-tree bpduguard disable', (c) => each(c, (i) => { i.bpduguard = false; }));
+  cmd(IF_MODES, 's', 'no spanning-tree bpduguard', (c) => each(c, (i) => { i.bpduguard = false; }));
+  cmd(IF_MODES, 's', 'spanning-tree link-type <word>', (c, [t]) => {
+    const lt = ['point-to-point', 'shared'].find((x) => x.startsWith(t.toLowerCase()));
+    if (!lt) return c.invalid(2);
+    each(c, (i) => { i.linkType = lt; });
+  });
+  cmd(IF_MODES, 's', 'spanning-tree vlan <vlanlist> cost <word>', (c, [list, n]) => {
+    const vs = parseVlanList(list);
+    const cost = Number(n);
+    if (!vs || !/^\d+$/.test(n) || cost < 1 || cost > 200000000) return c.invalid(4);
+    each(c, (i) => vs.forEach((v) => { i.stpCost[v] = cost; }));
+  });
+  cmd(IF_MODES, 's', 'no spanning-tree vlan <vlanlist> cost', (c, [list]) => each(c, (i) => (parseVlanList(list) || []).forEach((v) => { delete i.stpCost[v]; })));
+  cmd(IF_MODES, 's', 'spanning-tree vlan <vlanlist> port-priority <word>', (c, [list, n]) => {
+    const vs = parseVlanList(list);
+    const pr = Number(n);
+    if (!vs || !/^\d+$/.test(n) || pr > 240) return c.invalid(4);
+    if (pr % 16) return c.out('% Port Priority in increments of 16 is required', '% Allowed values are:', '  0 16 32 48 64 80 96 112 128 144 160 176 192 208 224 240');
+    each(c, (i) => vs.forEach((v) => { i.stpPortPrio[v] = pr; }));
+  });
   cmd('G', 's', 'no spanning-tree vlan <vlanlist> priority', (c, [list]) => {
     for (const v of parseVlanList(list) || []) delete c.d.stpPrio[v];
   });
@@ -1229,6 +1343,7 @@
     each(c, (i) => {
       const wasUp = ifUp(c.s, c.d.name, i.name);
       i.shutdown = down;
+      if (down) i.errDisabled = false;
       const nowUp = ifUp(c.s, c.d.name, i.name);
       if (down && !i.parent) {
         c.out(`%LINK-5-CHANGED: Interface ${i.name}, changed state to administratively down`);
@@ -1525,7 +1640,7 @@
 
   /* Fills fields added in later versions, so lab states saved by older versions keep working. */
   function upgrade(s) {
-    if (s.v === 2) return s;
+    if (s.v === 3) return s;
     for (const d of Object.values(s.devices)) {
       if (d.kind === 'pc') continue;
       if (!d.vtp) d.vtp = { mode: 'server', domain: '', rev: 0, version: 1 };
@@ -1533,13 +1648,15 @@
       if (!d.bridgeMac) d.bridgeMac = macFor(d.name + 'bridge');
       if (d.ipRouting == null) d.ipRouting = false;
       if (d.gw === undefined) d.gw = null;
+      if (!d.stpMode) Object.assign(d, { stpMode: 'pvst', portfastDefault: false, bpduguardDefault: false });
       for (const i of Object.values(d.ifaces)) {
+        if (!i.stpCost) Object.assign(i, { portfast: null, bpduguard: false, errDisabled: false, stpCost: {}, stpPortPrio: {} });
         if (i.routed == null) i.routed = false;
         if (i.noneg == null) i.noneg = false;
         if (i.svi === undefined) i.svi = null;
       }
     }
-    s.v = 2;
+    s.v = 3;
     return s;
   }
 
@@ -1567,6 +1684,10 @@
     if (d.kind === 'pc') pcExec(s, d, line, out);
     else runLine(s, name, t.mode, line, out, p.length);
     vtpSync(s);
+    for (const [dn, lines] of Object.entries(bpduGuard(s))) {
+      if (dn === name) out.push(...lines);
+      else push(s.term[dn], lines);
+    }
     if (line.trim()) {
       t.hist.push(line);
       if (t.hist.length > 50) t.hist.shift();
@@ -1647,7 +1768,7 @@
   }
 
   function createLab(def) {
-    const s = { lab: def.id, v: 2, devices: {}, links: [], term: {}, active: null, answers: [], touched: false };
+    const s = { lab: def.id, v: 3, devices: {}, links: [], term: {}, active: null, answers: [], touched: false };
     for (const dd of def.devices) s.devices[dd.name] = newDevice(dd);
     for (const [a, ai, b, bi] of def.links || []) {
       const na = s.devices[a].kind === 'pc' ? 'nic' : parseIf(ai).name;
@@ -1665,6 +1786,7 @@
       if (dd.saved) s.devices[dd.name].startup = runBody(s.devices[dd.name]).join('\n');
     }
     vtpSync(s);
+    bpduGuard(s);
     for (const dd of def.devices) {
       const d = s.devices[dd.name];
       const banner = d.kind === 'pc'
@@ -1716,6 +1838,8 @@
       vlan: (n, v) => (dev(n).vlans || {})[v],
       op: (n, x) => opMode(s, n, ifc(n, x)),
       stp: (v) => computeStp(s, v),
+      portfast: (n, x) => portfastOn(s, dev(n), ifc(n, x)),
+      bpduguard: (n, x) => bpduguardOn(s, dev(n), ifc(n, x)),
       mac: (n, x) => (x ? ifc(n, x).mac : dev(n).nicMac),
       answer: (k) => s.answers[k] || '',
     };

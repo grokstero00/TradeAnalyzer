@@ -1,20 +1,20 @@
 /*
  * Template for a new course day.
- * 1. Copy this file to dayNN.js (for example day21.js).
+ * 1. Copy this file to dayNN.js (for example day23.js).
  * 2. Fill in day, title and questions.
- * 3. Add 'day21.js' to the list in days/manifest.js.
+ * 3. Add 'day23.js' to the list in days/manifest.js.
  * IDs must be unique across the whole bank: use the dNN-XX pattern.
  * Indices in "answer" start at 0. Text supports `code` and **bold**.
  */
 CCNA.registerDay({
-  day: 21,
-  title: 'Spanning Tree Protocol (Part 2)',
-  titleRu: 'Spanning Tree Protocol, часть 2',
-  topics: ['STP toolkit', 'PVST+ configuration'],
+  day: 23,
+  title: 'EtherChannel',
+  titleRu: 'EtherChannel',
+  topics: ['LACP', 'PAgP', 'Static EtherChannel'],
   questions: [
     // One correct answer
     {
-      id: 'd21-01',
+      id: 'd23-01',
       type: 'single',
       question: 'Question text?',
       options: ['Option A', 'Option B', 'Option C', 'Option D'],
@@ -23,7 +23,7 @@ CCNA.registerDay({
     },
     // Several correct answers ("Choose two." is added automatically)
     {
-      id: 'd21-02',
+      id: 'd23-02',
       type: 'multi',
       question: 'Which two statements are true?',
       options: ['A', 'B', 'C', 'D', 'E'],
@@ -32,7 +32,7 @@ CCNA.registerDay({
     },
     // Drag-and-drop matching: answer[i] is the index in targets for items[i]
     {
-      id: 'd21-03',
+      id: 'd23-03',
       type: 'match',
       question: 'Match each item to its description.',
       items: ['Item 1', 'Item 2'],
@@ -42,7 +42,7 @@ CCNA.registerDay({
     },
     // Ordering: items are listed in the CORRECT order, the app shuffles them
     {
-      id: 'd21-04',
+      id: 'd23-04',
       type: 'order',
       question: 'Put the steps in order.',
       items: ['Step 1', 'Step 2', 'Step 3'],
@@ -50,7 +50,7 @@ CCNA.registerDay({
     },
     // Typed answer (case and extra spaces are ignored); list all accepted variants
     {
-      id: 'd21-05',
+      id: 'd23-05',
       type: 'fill',
       question: 'Type the command that ...',
       answer: ['show ip route', 'sh ip route'],
@@ -58,7 +58,7 @@ CCNA.registerDay({
     },
     // Any type can have an exhibit (CLI output, topology) shown in a terminal block
     {
-      id: 'd21-06',
+      id: 'd23-06',
       type: 'single',
       exhibit: 'R1# show ip interface brief\n...',
       question: 'Refer to the exhibit. ...?',
@@ -74,7 +74,7 @@ CCNA.registerDay({
   // Optional: practical CLI labs. Checks run against the final device state.
   labs: [
     {
-      id: 'lab-d21-example',
+      id: 'lab-d23-example',
       kind: 'sim', // 'sim' = configure devices, 'simlet' = answer questions from show output
       title: 'Example lab',
       minutes: 10,

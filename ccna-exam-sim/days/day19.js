@@ -1,7 +1,7 @@
 CCNA.registerDay({
   day: 19,
   title: 'DTP/VTP',
-  titleRu: 'DTP и VTP',
+  titleRu: 'DTP и VTP (по курсу: нет в программе экзамена)',
   topics: ['DTP modes', 'Trunk negotiation results', 'switchport nonegotiate', 'VTP modes', 'Revision number', 'VTP versions'],
   questions: [
     {
@@ -40,7 +40,7 @@ CCNA.registerDay({
       question: 'Which command disables DTP negotiation on a switch port?',
       options: ['switchport nonegotiate', 'no dtp', 'switchport mode dynamic auto', 'no switchport'],
       answer: 0,
-      explanation: '`switchport nonegotiate` отключает отправку DTP-кадров. Работает только вместе со статическим режимом (`switchport mode access` или `trunk`), иначе: «Conflict between \'nonegotiate\' and \'dynamic\' status».',
+      explanation: 'В курсе названы два способа отключить согласование DTP на интерфейсе: `switchport nonegotiate` и `switchport mode access`. Вариант `switchport nonegotiate` работает только при статическом режиме порта (access или trunk).',
     },
     {
       id: 'd19-05',
@@ -71,11 +71,11 @@ CCNA.registerDay({
       targets: [
         'Can create, modify and delete VLANs; advertises and synchronizes the VLAN database (default mode)',
         'Cannot modify VLANs; synchronizes to the highest revision in its domain and forwards advertisements',
-        'Does not participate in VTP; keeps its own local VLAN database and forwards advertisements',
+        'Does not participate in VTP; keeps its own VLAN database and forwards advertisements to switches in the same domain',
         'Disables VLANs on the switch',
       ],
       answer: [0, 1, 2],
-      explanation: 'Server — режим по умолчанию: меняет VLAN и рассылает объявления. Client — только синхронизируется. Transparent — сам не синхронизируется, VLAN хранит локально (в running-config), но объявления пересылает дальше.',
+      explanation: 'Server — режим по умолчанию: добавляет, меняет и удаляет VLAN, хранит базу в NVRAM и объявляет её по trunk-портам. Client не может менять VLAN и синхронизируется с сервером с наибольшим revision number в своём домене. Transparent не участвует в VTP-домене, ведёт свою базу VLAN и пересылает объявления коммутаторам того же домена.',
     },
     {
       id: 'd19-08',
@@ -96,7 +96,7 @@ CCNA.registerDay({
         'VTP is disabled on all switches',
       ],
       answer: 0,
-      explanation: 'Так называемая «VTP-бомба»: база с более высоким revision number перезаписывает базы всех серверов и клиентов домена. Даже клиент может перезаписать сервер. Перед подключением коммутатора номер ревизии сбрасывают: смена домена или режим transparent обнуляют его.',
+      explanation: 'Это опасность VTP, о которой говорится в курсе: если подключить старый коммутатор с более высоким revision number и тем же доменом, все коммутаторы домена синхронизируют с ним свою базу VLAN. VTP-сервер тоже работает как клиент и синхронизируется с другим сервером, у которого revision выше.',
     },
     {
       id: 'd19-10',
@@ -125,7 +125,7 @@ CCNA.registerDay({
       question: 'Which VTP version adds support for extended-range VLANs (1006–4094)?',
       options: ['VTPv1', 'VTPv2', 'VTPv3', 'All versions'],
       answer: 2,
-      explanation: 'VTP v1 и v2 синхронизируют только VLAN 1–1005. VTP v3 поддерживает extended range (1006–4094) и private VLAN. v2 отличается от v1 мелочами, например поддержкой Token Ring и тем, что transparent-коммутатор пересылает объявления без проверки домена.',
+      explanation: 'v1 и v2 не поддерживают extended range VLAN 1006–4094. v2 добавляет поддержку Token Ring VLAN, в остальном похожа на v1. v3 поддерживает extended range, и клиенты v3 хранят базу VLAN в NVRAM.',
     },
     {
       id: 'd19-13',

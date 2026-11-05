@@ -137,14 +137,6 @@ CCNA.registerDay({
       answer: 0,
       explanation: 'Root ports: SW2 Gi0/1 и SW3 Gi0/1 (стоимость 4). На линке SW2–SW3 у обоих root cost 4, поэтому designated-порт получает коммутатор с меньшим Bridge ID — SW2 (MAC ...0200 < ...0300). Порт SW3 Gi0/2 блокируется.',
     },
-    {
-      id: 'd20-15',
-      type: 'single',
-      question: 'Which version of STP is used by default on Cisco switches?',
-      options: ['PVST+ (a separate STP instance per VLAN)', 'A single 802.1D instance for all VLANs', 'MSTP', 'RSTP only'],
-      answer: 0,
-      explanation: 'Cisco по умолчанию использует PVST+: отдельный экземпляр STP в каждой VLAN. Поэтому у каждой VLAN может быть свой root bridge и свои заблокированные порты.',
-    },
   ],
   generators: [
     {
